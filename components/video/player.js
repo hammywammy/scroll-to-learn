@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Dimensions, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Dimensions, StyleSheet, Pressable, Animated, PanResponder } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import Engagement from './engagement';
 
@@ -12,6 +12,13 @@ export default function VideoPlayer({ video, isActive }) {
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekPosition, setSeekPosition] = useState(0);
+  
+  // Double tap detection
+  const lastTap = useRef(null);
+  const [likeAnimScale] = useState(new Animated.Value(0));
+  const [likeAnimOpacity] = useState(new Animated.Value(0));
 
   // Handle video playback based on isActive prop
   useEffect(() => {
@@ -25,6 +32,79 @@ export default function VideoPlayer({ video, isActive }) {
       }
     }
   }, [isActive]);
+
+  // Pan responder for hold and drag seeking
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only start seeking if moved more than 10px vertically
+        return Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderGrant: () => {
+        setIsSeeking(true);
+        if (videoRef.current) {
+          videoRef.current.pauseAsync();
+        }
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (duration > 0) {
+          // Calculate seek position based on vertical drag
+          const dragPercentage = Math.max(0, Math.min(1, -gestureState.dy / 300));
+          const newPosition = position + (dragPercentage * duration * 0.1);
+          const clampedPosition = Math.max(0, Math.min(duration, newPosition));
+          setSeekPosition(clampedPosition);
+        }
+      },
+      onPanResponderRelease: async (evt, gestureState) => {
+        if (isSeeking && videoRef.current) {
+          await videoRef.current.setPositionAsync(seekPosition);
+          if (isPlaying) {
+            videoRef.current.playAsync();
+          }
+        }
+        setIsSeeking(false);
+      },
+    })
+  ).current;
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (lastTap.current && now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected - trigger like
+      handleLike();
+      
+      // Animate heart
+      likeAnimScale.setValue(0);
+      likeAnimOpacity.setValue(1);
+      
+      Animated.parallel([
+        Animated.spring(likeAnimScale, {
+          toValue: 1,
+          friction: 3,
+          useNativeDriver: true,
+        }),
+        Animated.timing(likeAnimOpacity, {
+          toValue: 0,
+          duration: 800,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      lastTap.current = null;
+    } else {
+      lastTap.current = now;
+      // Single tap - toggle play/pause
+      setTimeout(() => {
+        if (lastTap.current === now) {
+          handlePlayPause();
+        }
+      }, DOUBLE_TAP_DELAY);
+    }
+  };
 
   const handlePlayPause = async () => {
     if (videoRef.current) {
@@ -45,10 +125,16 @@ export default function VideoPlayer({ video, isActive }) {
     }
   };
 
+  const handleLike = () => {
+    setIsLiked(!isLiked);
+  };
+
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
       setDuration(status.durationMillis || 0);
-      setPosition(status.positionMillis || 0);
+      if (!isSeeking) {
+        setPosition(status.positionMillis || 0);
+      }
       setIsPlaying(status.isPlaying);
     }
   };
@@ -56,8 +142,8 @@ export default function VideoPlayer({ video, isActive }) {
   const handleSeek = async (locationX, width) => {
     if (videoRef.current && duration > 0) {
       const percentage = locationX / width;
-      const seekPosition = percentage * duration;
-      await videoRef.current.setPositionAsync(seekPosition);
+      const newPosition = percentage * duration;
+      await videoRef.current.setPositionAsync(newPosition);
     }
   };
 
@@ -69,9 +155,10 @@ export default function VideoPlayer({ video, isActive }) {
   };
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
+  const seekPercentage = duration > 0 ? (seekPosition / duration) * 100 : 0;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       <Video
         ref={videoRef}
         source={{ uri: video.url }}
@@ -83,23 +170,59 @@ export default function VideoPlayer({ video, isActive }) {
         progressUpdateIntervalMillis={100}
       />
       
-      {/* Play/Pause Overlay */}
-      <Pressable style={styles.playPauseOverlay} onPress={handlePlayPause}>
-        {!isPlaying && (
+      {/* Tap overlay for play/pause and double-tap */}
+      <Pressable 
+        style={styles.tapOverlay} 
+        onPress={handleDoubleTap}
+      >
+        {/* Play button when paused */}
+        {!isPlaying && !isSeeking && (
           <View style={styles.playButton}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
         )}
+
+        {/* Double-tap heart animation */}
+        <Animated.View 
+          style={[
+            styles.doubleTapHeart,
+            {
+              opacity: likeAnimOpacity,
+              transform: [{ scale: likeAnimScale }],
+            },
+          ]}
+        >
+          <Text style={styles.doubleTapHeartIcon}>❤️</Text>
+        </Animated.View>
+
+        {/* Seeking indicator with white circle */}
+        {isSeeking && (
+          <View style={styles.seekingIndicator}>
+            <View style={styles.seekingCircle} />
+            <Text style={styles.seekingText}>{formatTime(seekPosition)}</Text>
+          </View>
+        )}
       </Pressable>
 
-      {/* Bottom Controls */}
-      <View style={styles.bottomControls}>
-        {/* Progress Bar */}
+      {/* Mute Button */}
+      <Pressable style={styles.muteButton} onPress={handleMuteToggle}>
+        <Text style={styles.muteIcon}>{isMuted ? '🔇' : '🔊'}</Text>
+      </Pressable>
+
+      {/* Bottom Section - TikTok Style */}
+      <View style={styles.bottomSection}>
+        {/* Profile and Video Info */}
+        <View style={styles.infoSection}>
+          <Text style={styles.username}>@{video.creator}</Text>
+          <Text style={styles.description}>{video.description}</Text>
+        </View>
+
+        {/* Progress Bar - Below info */}
         <Pressable 
           style={styles.progressContainer}
           onPress={(e) => {
             const { locationX } = e.nativeEvent;
-            handleSeek(locationX, SCREEN_WIDTH - 40);
+            handleSeek(locationX, SCREEN_WIDTH - 100);
           }}
         >
           <View style={styles.progressBar}>
@@ -113,18 +236,7 @@ export default function VideoPlayer({ video, isActive }) {
             {formatTime(position)} / {formatTime(duration)}
           </Text>
         </View>
-
-        {/* Video Info */}
-        <View style={styles.bottomInfo}>
-          <Text style={styles.username}>@{video.creator}</Text>
-          <Text style={styles.description}>{video.description}</Text>
-        </View>
       </View>
-
-      {/* Mute Button */}
-      <Pressable style={styles.muteButton} onPress={handleMuteToggle}>
-        <Text style={styles.muteIcon}>{isMuted ? '🔇' : '🔊'}</Text>
-      </Pressable>
       
       {/* Engagement Buttons */}
       <Engagement 
@@ -132,7 +244,7 @@ export default function VideoPlayer({ video, isActive }) {
         comments={video.comments}
         shares={video.shares}
         isLiked={isLiked}
-        onLike={() => setIsLiked(!isLiked)}
+        onLike={handleLike}
         videoUrl={video.url}
       />
     </View>
@@ -151,7 +263,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
   },
-  playPauseOverlay: {
+  tapOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
@@ -169,10 +281,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginLeft: 5,
   },
+  doubleTapHeart: {
+    position: 'absolute',
+  },
+  doubleTapHeartIcon: {
+    fontSize: 120,
+  },
+  seekingIndicator: {
+    alignItems: 'center',
+  },
+  seekingCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
+  },
+  seekingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   muteButton: {
     position: 'absolute',
     top: 50,
-    right: 20,
+    right: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -183,17 +319,31 @@ const styles = StyleSheet.create({
   muteIcon: {
     fontSize: 20,
   },
-  bottomControls: {
+  bottomSection: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 80,
     paddingBottom: 100,
+    paddingHorizontal: 16,
+  },
+  infoSection: {
+    marginBottom: 12,
+  },
+  username: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  description: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 18,
   },
   progressContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 8,
     paddingVertical: 8,
+    marginBottom: 4,
   },
   progressBar: {
     height: 2,
@@ -207,25 +357,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   timeContainer: {
-    paddingHorizontal: 20,
     marginBottom: 8,
   },
   timeText: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 11,
     fontWeight: '500',
-  },
-  bottomInfo: {
-    paddingHorizontal: 20,
-  },
-  username: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  description: {
-    color: '#fff',
-    fontSize: 14,
   },
 });
