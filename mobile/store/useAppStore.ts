@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-interface AppState {
+interface AppState { 
   isAuthenticated: boolean;
   currentVideoIndex: number;
   setAuthenticated: (value: boolean) => void;
