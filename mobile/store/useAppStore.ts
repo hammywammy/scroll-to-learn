@@ -5,7 +5,7 @@ interface AppState {
   currentVideoIndex: number;
   setAuthenticated: (value: boolean) => void;
   setCurrentVideo: (index: number) => void;
-}
+} 
 
 export const useAppStore = create<AppState>((set) => ({
   isAuthenticated: false,
