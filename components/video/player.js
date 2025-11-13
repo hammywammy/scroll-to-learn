@@ -7,13 +7,14 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function VideoPlayer({ video, isActive }) {
   const videoRef = useRef(null);
+  const previewVideoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPosition, setSeekPosition] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState(0);
   
   // Double tap detection
   const lastTap = useRef(null);
@@ -33,37 +34,46 @@ export default function VideoPlayer({ video, isActive }) {
     }
   }, [isActive]);
 
-  // Pan responder for hold and drag seeking
-  const panResponder = useRef(
+  // Pan responder for progress bar scrubbing
+  const progressPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Only start seeking if moved more than 10px vertically
-        return Math.abs(gestureState.dy) > 10;
-      },
-      onPanResponderGrant: () => {
-        setIsSeeking(true);
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: async (evt) => {
+        setIsScrubbing(true);
         if (videoRef.current) {
-          videoRef.current.pauseAsync();
+          await videoRef.current.pauseAsync();
+        }
+        // Calculate initial scrub position from tap location
+        const touchX = evt.nativeEvent.locationX;
+        const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
+        const newPosition = percentage * duration;
+        setScrubPosition(newPosition);
+        if (previewVideoRef.current) {
+          await previewVideoRef.current.setPositionAsync(newPosition);
         }
       },
-      onPanResponderMove: (evt, gestureState) => {
+      onPanResponderMove: async (evt, gestureState) => {
         if (duration > 0) {
-          // Calculate seek position based on vertical drag
-          const dragPercentage = Math.max(0, Math.min(1, -gestureState.dy / 300));
-          const newPosition = position + (dragPercentage * duration * 0.1);
-          const clampedPosition = Math.max(0, Math.min(duration, newPosition));
-          setSeekPosition(clampedPosition);
-        }
-      },
-      onPanResponderRelease: async (evt, gestureState) => {
-        if (isSeeking && videoRef.current) {
-          await videoRef.current.setPositionAsync(seekPosition);
-          if (isPlaying) {
-            videoRef.current.playAsync();
+          const touchX = evt.nativeEvent.pageX;
+          const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
+          const newPosition = percentage * duration;
+          setScrubPosition(newPosition);
+          
+          // Update preview video position
+          if (previewVideoRef.current) {
+            await previewVideoRef.current.setPositionAsync(newPosition);
           }
         }
-        setIsSeeking(false);
+      },
+      onPanResponderRelease: async () => {
+        if (videoRef.current) {
+          await videoRef.current.setPositionAsync(scrubPosition);
+          if (isPlaying) {
+            await videoRef.current.playAsync();
+          }
+        }
+        setIsScrubbing(false);
       },
     })
   ).current;
@@ -132,18 +142,10 @@ export default function VideoPlayer({ video, isActive }) {
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
       setDuration(status.durationMillis || 0);
-      if (!isSeeking) {
+      if (!isScrubbing) {
         setPosition(status.positionMillis || 0);
       }
       setIsPlaying(status.isPlaying);
-    }
-  };
-
-  const handleSeek = async (locationX, width) => {
-    if (videoRef.current && duration > 0) {
-      const percentage = locationX / width;
-      const newPosition = percentage * duration;
-      await videoRef.current.setPositionAsync(newPosition);
     }
   };
 
@@ -155,10 +157,12 @@ export default function VideoPlayer({ video, isActive }) {
   };
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
-  const seekPercentage = duration > 0 ? (seekPosition / duration) * 100 : 0;
+  const scrubPercentage = duration > 0 ? (scrubPosition / duration) * 100 : 0;
+  const displayPosition = isScrubbing ? scrubPosition : position;
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <View style={styles.container}>
+      {/* Main Video */}
       <Video
         ref={videoRef}
         source={{ uri: video.url }}
@@ -169,6 +173,20 @@ export default function VideoPlayer({ video, isActive }) {
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
         progressUpdateIntervalMillis={100}
       />
+
+      {/* Preview Video Overlay - Shows when scrubbing */}
+      {isScrubbing && (
+        <View style={styles.previewOverlay}>
+          <Video
+            ref={previewVideoRef}
+            source={{ uri: video.url }}
+            style={styles.video}
+            resizeMode={ResizeMode.COVER}
+            isMuted={true}
+          />
+          <View style={styles.scrubbingOverlay} />
+        </View>
+      )}
       
       {/* Tap overlay for play/pause and double-tap */}
       <Pressable 
@@ -176,7 +194,7 @@ export default function VideoPlayer({ video, isActive }) {
         onPress={handleDoubleTap}
       >
         {/* Play button when paused */}
-        {!isPlaying && !isSeeking && (
+        {!isPlaying && !isScrubbing && (
           <View style={styles.playButton}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
@@ -194,14 +212,6 @@ export default function VideoPlayer({ video, isActive }) {
         >
           <Text style={styles.doubleTapHeartIcon}>❤️</Text>
         </Animated.View>
-
-        {/* Seeking indicator with white circle */}
-        {isSeeking && (
-          <View style={styles.seekingIndicator}>
-            <View style={styles.seekingCircle} />
-            <Text style={styles.seekingText}>{formatTime(seekPosition)}</Text>
-          </View>
-        )}
       </Pressable>
 
       {/* Mute Button */}
@@ -216,25 +226,33 @@ export default function VideoPlayer({ video, isActive }) {
           <Text style={styles.username}>@{video.creator}</Text>
           <Text style={styles.description}>{video.description}</Text>
         </View>
+      </View>
 
-        {/* Progress Bar - Below info */}
-        <Pressable 
-          style={styles.progressContainer}
-          onPress={(e) => {
-            const { locationX } = e.nativeEvent;
-            handleSeek(locationX, SCREEN_WIDTH - 100);
-          }}
-        >
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
+      {/* Progress Bar - Full Width at Bottom */}
+      <View style={styles.progressSection} {...progressPanResponder.panHandlers}>
+        {/* Time Display - Shows when scrubbing */}
+        {isScrubbing && (
+          <View style={styles.timeDisplay}>
+            <Text style={styles.timeText}>{formatTime(scrubPosition)}</Text>
           </View>
-        </Pressable>
+        )}
 
-        {/* Time Display */}
-        <View style={styles.timeContainer}>
-          <Text style={styles.timeText}>
-            {formatTime(position)} / {formatTime(duration)}
-          </Text>
+        <View style={styles.progressBarContainer}>
+          <View style={styles.progressBar}>
+            <View 
+              style={[
+                styles.progressFill, 
+                { width: `${isScrubbing ? scrubPercentage : progressPercentage}%` }
+              ]} 
+            />
+          </View>
+          {/* Progress Circle/Thumb */}
+          <View 
+            style={[
+              styles.progressThumb, 
+              { left: `${isScrubbing ? scrubPercentage : progressPercentage}%` }
+            ]} 
+          />
         </View>
       </View>
       
@@ -263,10 +281,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
   },
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  scrubbingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
   tapOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1,
   },
   playButton: {
     width: 80,
@@ -287,24 +314,6 @@ const styles = StyleSheet.create({
   doubleTapHeartIcon: {
     fontSize: 120,
   },
-  seekingIndicator: {
-    alignItems: 'center',
-  },
-  seekingCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: 12,
-  },
-  seekingText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
   muteButton: {
     position: 'absolute',
     top: 50,
@@ -315,17 +324,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 2,
   },
   muteIcon: {
     fontSize: 20,
   },
   bottomSection: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 90,
     left: 0,
     right: 80,
-    paddingBottom: 100,
     paddingHorizontal: 16,
+    zIndex: 2,
   },
   infoSection: {
     marginBottom: 12,
@@ -341,27 +351,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 18,
   },
-  progressContainer: {
-    paddingVertical: 8,
-    marginBottom: 4,
+  progressSection: {
+    position: 'absolute',
+    bottom: 70,
+    left: 0,
+    right: 0,
+    zIndex: 3,
   },
-  progressBar: {
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 2,
-    backgroundColor: '#fff',
-    borderRadius: 2,
-  },
-  timeContainer: {
-    marginBottom: 8,
+  timeDisplay: {
+    position: 'absolute',
+    top: -30,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   timeText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 11,
-    fontWeight: '500',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  progressBarContainer: {
+    height: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+  },
+  progressBar: {
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    width: '100%',
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: '#fff',
+  },
+  progressThumb: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    marginLeft: -6,
+    top: 4,
   },
 });
