@@ -1,12 +1,24 @@
 {
-  "name": "scroll-api",
+  "name": "scrolltolearn",
   "version": "1.0.0",
-  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "start": "expo start --tunnel",
+    "web": "expo start --web",
+    "clear": "expo start --clear"
+  },
+  "dependencies": {
+    "expo": "~54.0.0",
+    "expo-status-bar": "~2.0.0",
+    "expo-video": "~3.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0",
+    "react-dom": "18.3.1",
+    "react-native-web": "~0.21.0",
+    "react-native-safe-area-context": "~5.0.0"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
-  }
+    "@babel/core": "^7.24.0"
+  },
+  "private": true
 }
