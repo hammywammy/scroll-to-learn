@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 
-// CHANGE THIS to your deployed Worker URL
-const API_URL = 'https://scroll-api-dev.YOUR-USERNAME.workers.dev';
+// Your Worker URL
+const API_URL = 'https://scroll-api-dev.hamzawilliamsbusiness.workers.dev';
 
 export default function App() {
   const [status, setStatus] = useState('loading...');
@@ -12,11 +12,11 @@ export default function App() {
     fetch(`${API_URL}/api/test`)
       .then(res => res.json())
       .then(data => {
-        setStatus(data.message || 'Connected!');
+        setStatus('✅ All loaded correctly!');
         setLoading(false);
       })
       .catch(err => {
-        setStatus('Error: ' + err.message);
+        setStatus('❌ Error: ' + err.message);
         setLoading(false);
       });
   }, []);
@@ -37,19 +37,25 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a1a',
     alignItems: 'center',
     justifyContent: 'center',
   },
   box: {
-    padding: 20,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
+    padding: 30,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 15,
     borderWidth: 2,
     borderColor: '#007AFF',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   text: {
-    fontSize: 18,
-    color: '#333',
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
