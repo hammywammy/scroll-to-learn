@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "ScrollToLearn",
+    "slug": "scroll-to-learn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"]
+  }
+}
