@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
+import { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon } from '../common/icons';
 
 export default function Engagement({ likes, comments, shares, isLiked, onLike, videoUrl }) {
   const [likeAnim] = useState(new Animated.Value(1));
   const [shareAnim] = useState(new Animated.Value(1));
+  const [saveAnim] = useState(new Animated.Value(1));
   const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   const handleShare = async () => {
     // Animate share button
     Animated.sequence([
       Animated.timing(shareAnim, {
-        toValue: 1.3,
+        toValue: 1.2,
         duration: 100,
         useNativeDriver: true,
       }),
@@ -32,22 +35,42 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   };
 
   const handleLike = () => {
-    // Animate like button
+    // Heart vibration and pop animation
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(likeAnim, {
+          toValue: 1.4,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(likeAnim, {
+          toValue: 1,
+          friction: 3,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    onLike();
+  };
+
+  const handleSave = () => {
+    // Bookmark subtle animation
     Animated.sequence([
-      Animated.timing(likeAnim, {
-        toValue: 1.5,
+      Animated.timing(saveAnim, {
+        toValue: 1.15,
         duration: 150,
         useNativeDriver: true,
       }),
-      Animated.spring(likeAnim, {
+      Animated.timing(saveAnim, {
         toValue: 1,
-        friction: 3,
-        tension: 40,
+        duration: 150,
         useNativeDriver: true,
       }),
     ]).start();
 
-    onLike();
+    setIsSaved(!isSaved);
   };
 
   const handleComment = () => {
@@ -67,13 +90,7 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
         <Pressable style={styles.item} onPress={handleLike}>
           <Animated.View style={{ transform: [{ scale: likeAnim }] }}>
             <View style={styles.iconContainer}>
-              {isLiked ? (
-                <Text style={styles.iconFilled}>❤️</Text>
-              ) : (
-                <View style={styles.heartOutline}>
-                  <Text style={styles.heartOutlineText}>♡</Text>
-                </View>
-              )}
+              <HeartIcon filled={isLiked} size={34} />
             </View>
           </Animated.View>
           <Text style={styles.count}>{displayLikes}</Text>
@@ -82,20 +99,26 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
         {/* Comment Button */}
         <Pressable style={styles.item} onPress={handleComment}>
           <View style={styles.iconContainer}>
-            <View style={styles.commentIcon}>
-              <Text style={styles.commentIconText}>💬</Text>
-            </View>
+            <CommentIcon size={34} />
           </View>
           <Text style={styles.count}>{comments}</Text>
+        </Pressable>
+
+        {/* Bookmark Button */}
+        <Pressable style={styles.item} onPress={handleSave}>
+          <Animated.View style={{ transform: [{ scale: saveAnim }] }}>
+            <View style={styles.iconContainer}>
+              <BookmarkIcon saved={isSaved} size={32} />
+            </View>
+          </Animated.View>
+          <Text style={styles.count}>Save</Text>
         </Pressable>
         
         {/* Share Button */}
         <Pressable style={styles.item} onPress={handleShare}>
           <Animated.View style={{ transform: [{ scale: shareAnim }] }}>
             <View style={styles.iconContainer}>
-              <View style={styles.shareIcon}>
-                <Text style={styles.shareIconText}>➤</Text>
-              </View>
+              <ShareIcon size={32} />
             </View>
           </Animated.View>
           <Text style={styles.count}>{shares}</Text>
@@ -157,55 +180,18 @@ const styles = StyleSheet.create({
   },
   item: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  heartOutline: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heartOutlineText: {
-    fontSize: 36,
-    color: '#fff',
-    fontWeight: '300',
-  },
-  iconFilled: {
-    fontSize: 36,
-  },
-  commentIcon: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ scaleX: -1 }],
-  },
-  commentIconText: {
-    fontSize: 32,
-    color: '#fff',
-  },
-  shareIcon: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '45deg' }],
-  },
-  shareIconText: {
-    fontSize: 28,
-    color: '#fff',
-    fontWeight: 'bold',
   },
   count: {
     color: '#fff',
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 2,
     fontWeight: '600',
   },
   modalContainer: {
