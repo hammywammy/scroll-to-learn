@@ -1,15 +1,13 @@
 {
-  "name": "scroll-to-learn-mobile",
-  "version": "1.0.0",
+  "name": "scroll-to-learn",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios"
+    "start": "expo start --tunnel",
+    "ios": "expo start --ios",
+    "android": "expo start --android"
   },
   "dependencies": {
     "expo": "~50.0.0",
-    "expo-status-bar": "~1.11.0",
     "react": "18.2.0",
     "react-native": "0.73.0"
   }
