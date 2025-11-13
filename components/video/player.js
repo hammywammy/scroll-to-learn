@@ -53,9 +53,10 @@ export default function VideoPlayer({ video, isActive }) {
     }
   };
 
-  const handleSeek = async (value) => {
+  const handleSeek = async (locationX, width) => {
     if (videoRef.current && duration > 0) {
-      const seekPosition = (value / 100) * duration;
+      const percentage = locationX / width;
+      const seekPosition = percentage * duration;
       await videoRef.current.setPositionAsync(seekPosition);
     }
   };
@@ -79,6 +80,7 @@ export default function VideoPlayer({ video, isActive }) {
         isLooping
         isMuted={isMuted}
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+        progressUpdateIntervalMillis={100}
       />
       
       {/* Play/Pause Overlay */}
@@ -93,19 +95,17 @@ export default function VideoPlayer({ video, isActive }) {
       {/* Bottom Controls */}
       <View style={styles.bottomControls}>
         {/* Progress Bar */}
-        <View style={styles.progressContainer}>
+        <Pressable 
+          style={styles.progressContainer}
+          onPress={(e) => {
+            const { locationX } = e.nativeEvent;
+            handleSeek(locationX, SCREEN_WIDTH - 40);
+          }}
+        >
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
           </View>
-          <Pressable
-            style={[styles.progressThumb, { left: `${progressPercentage}%` }]}
-            onPress={(e) => {
-              const { locationX } = e.nativeEvent;
-              const percentage = (locationX / SCREEN_WIDTH) * 100;
-              handleSeek(percentage);
-            }}
-          />
-        </View>
+        </Pressable>
 
         {/* Time Display */}
         <View style={styles.timeContainer}>
@@ -192,34 +192,28 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 8,
+    paddingVertical: 8,
   },
   progressBar: {
-    height: 3,
+    height: 2,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 2,
+    overflow: 'hidden',
   },
   progressFill: {
-    height: 3,
+    height: 2,
     backgroundColor: '#fff',
     borderRadius: 2,
-  },
-  progressThumb: {
-    position: 'absolute',
-    top: -5,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#fff',
-    marginLeft: -6,
   },
   timeContainer: {
     paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   timeText: {
-    color: '#fff',
-    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+    fontWeight: '500',
   },
   bottomInfo: {
     paddingHorizontal: 20,
