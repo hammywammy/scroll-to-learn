@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { View, Text, StyleSheet, Dimensions, Animated, Image } from 'react-native';
+import { Video, ResizeMode, VideoThumbnails } from 'expo-av';
+import * as VideoThumbnailsLib from 'expo-video-thumbnails';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Thumbnail cache to avoid regenerating
+const thumbnailCache = {};
 
 export default function VideoScrubber({ 
   videoRef, 
@@ -18,24 +22,60 @@ export default function VideoScrubber({
   const [scrubPosition, setScrubPosition] = useState(0);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [thumbnailUri, setThumbnailUri] = useState(null);
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   
   const progressBarRef = useRef(null);
-  const previewVideoRef = useRef(null);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [progressBarX, setProgressBarX] = useState(0);
+  const thumbnailGenerationTimeout = useRef(null);
 
   // Preview animation
   const [previewScale] = useState(new Animated.Value(0));
   const [previewOpacity] = useState(new Animated.Value(0));
 
-  // Update preview video position when scrubbing
+  // Generate thumbnail at scrub position (debounced)
   useEffect(() => {
-    if (isScrubbing && previewVideoRef.current && scrubPosition > 0) {
-      previewVideoRef.current.setPositionAsync(scrubPosition).catch(err => {
-        console.log('Preview seek error:', err);
-      });
+    if (!isScrubbing || scrubPosition <= 0 || !videoUrl) return;
+
+    // Clear previous timeout
+    if (thumbnailGenerationTimeout.current) {
+      clearTimeout(thumbnailGenerationTimeout.current);
     }
-  }, [scrubPosition, isScrubbing]);
+
+    // Debounce thumbnail generation (only generate after user pauses for 50ms)
+    thumbnailGenerationTimeout.current = setTimeout(async () => {
+      const cacheKey = `${videoUrl}_${Math.floor(scrubPosition / 1000)}`; // Cache per second
+      
+      // Check cache first
+      if (thumbnailCache[cacheKey]) {
+        setThumbnailUri(thumbnailCache[cacheKey]);
+        return;
+      }
+
+      setIsGeneratingThumbnail(true);
+      
+      try {
+        const { uri } = await VideoThumbnailsLib.getThumbnailAsync(videoUrl, {
+          time: scrubPosition,
+          quality: 0.5, // Lower quality for faster generation
+        });
+        
+        thumbnailCache[cacheKey] = uri;
+        setThumbnailUri(uri);
+      } catch (error) {
+        console.log('Thumbnail generation error:', error);
+      } finally {
+        setIsGeneratingThumbnail(false);
+      }
+    }, 50); // 50ms debounce
+
+    return () => {
+      if (thumbnailGenerationTimeout.current) {
+        clearTimeout(thumbnailGenerationTimeout.current);
+      }
+    };
+  }, [scrubPosition, isScrubbing, videoUrl]);
 
   // Show preview with animation
   const showPreviewWithAnimation = () => {
@@ -156,7 +196,7 @@ export default function VideoScrubber({
 
   return (
     <View style={styles.container}>
-      {/* TikTok-Style Mini Video Preview */}
+      {/* TikTok-Style Thumbnail Preview */}
       {showPreview && (
         <Animated.View 
           style={[
@@ -168,16 +208,19 @@ export default function VideoScrubber({
             },
           ]}
         >
-          {/* Preview Video */}
-          <View style={styles.previewVideoWrapper}>
-            <Video
-              ref={previewVideoRef}
-              source={{ uri: videoUrl }}
-              style={styles.previewVideo}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={false}
-              isMuted={true}
-            />
+          {/* Preview Thumbnail */}
+          <View style={styles.previewImageWrapper}>
+            {thumbnailUri ? (
+              <Image
+                source={{ uri: thumbnailUri }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.previewLoading}>
+                <Text style={styles.previewLoadingText}>•••</Text>
+              </View>
+            )}
           </View>
           
           {/* Time Label */}
@@ -278,12 +321,12 @@ const styles = StyleSheet.create({
     width: 100,
     alignItems: 'center',
   },
-  previewVideoWrapper: {
+  previewImageWrapper: {
     width: 100,
-    height: 177, // 16:9 aspect ratio for vertical video (100 * 16/9)
+    height: 177, // 16:9 aspect ratio for vertical video
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: '#1a1a1a',
     borderWidth: 2,
     borderColor: '#fff',
     shadowColor: '#000',
@@ -292,9 +335,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 10,
   },
-  previewVideo: {
+  previewImage: {
     width: '100%',
     height: '100%',
+  },
+  previewLoading: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  previewLoadingText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   previewTimeLabel: {
     marginTop: 4,
