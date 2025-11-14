@@ -315,6 +315,7 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
         isLiked={isLiked}
         onLike={handleLike}
         videoUrl={video.url}
+        isPlaying={isPlaying}
       />
 
       {/* User Profile Modal */}
@@ -444,7 +445,7 @@ const styles = StyleSheet.create({
   profilePictureContainer: {
     position: 'absolute',
     right: 12,
-    bottom: 320, // Moved up to avoid engagement buttons
+    bottom: 380, // Much higher - well above engagement buttons
     zIndex: 10,
   },
   profilePicture: {
