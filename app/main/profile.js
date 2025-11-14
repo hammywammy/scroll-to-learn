@@ -9,9 +9,11 @@ import {
   FlatList,
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
+import EditProfile from '../../components/profile/EditProfile';
+import Settings from './settings';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const VIDEO_SIZE = (SCREEN_WIDTH - 6) / 3; // 3 columns with 2px gaps
+const VIDEO_SIZE = (SCREEN_WIDTH - 6) / 3;
 
 // Grid/Videos Icon
 const GridIcon = ({ active }) => (
@@ -82,6 +84,8 @@ const LockIcon = ({ active }) => (
 
 export default function Profile() {
   const [activeTab, setActiveTab] = useState('videos');
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Mock user data
   const userData = {
@@ -97,7 +101,7 @@ export default function Profile() {
   const mockVideos = Array.from({ length: 12 }, (_, i) => ({
     id: `video-${i + 1}`,
     views: `${Math.floor(Math.random() * 50 + 10)}K`,
-    isPinned: i === 0, // First video is pinned
+    isPinned: i === 0,
   }));
 
   const mockLikedVideos = Array.from({ length: 8 }, (_, i) => ({
@@ -115,34 +119,24 @@ export default function Profile() {
     views: `${Math.floor(Math.random() * 30 + 5)}K`,
   }));
 
-  // Get current videos based on active tab
   const getCurrentVideos = () => {
     switch (activeTab) {
-      case 'videos':
-        return mockVideos;
-      case 'liked':
-        return mockLikedVideos;
-      case 'saved':
-        return mockSavedVideos;
-      case 'private':
-        return mockPrivateVideos;
-      default:
-        return mockVideos;
+      case 'videos': return mockVideos;
+      case 'liked': return mockLikedVideos;
+      case 'saved': return mockSavedVideos;
+      case 'private': return mockPrivateVideos;
+      default: return mockVideos;
     }
   };
 
   const renderVideoItem = ({ item, index }) => (
     <Pressable style={styles.videoItem}>
-      {/* Video Thumbnail Placeholder */}
       <View style={styles.videoThumbnail}>
-        {/* Pinned Badge */}
         {item.isPinned && (
           <View style={styles.pinnedBadge}>
             <Text style={styles.pinnedText}>Pinned</Text>
           </View>
         )}
-        
-        {/* Play Icon & Views */}
         <View style={styles.videoInfo}>
           <Text style={styles.playIcon}>▶</Text>
           <Text style={styles.viewCount}>{item.views}</Text>
@@ -151,13 +145,20 @@ export default function Profile() {
     </Pressable>
   );
 
+  if (showSettings) {
+    return <Settings onBack={() => setShowSettings(false)} />;
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft} />
         <Text style={styles.headerTitle}>{userData.name}</Text>
-        <Pressable style={styles.headerRight}>
+        <Pressable 
+          style={styles.headerRight}
+          onPress={() => setShowSettings(true)}
+        >
           <Text style={styles.menuIcon}>⋯</Text>
         </Pressable>
       </View>
@@ -202,7 +203,10 @@ export default function Profile() {
         </View>
 
         {/* Edit Profile Button */}
-        <Pressable style={styles.editButton}>
+        <Pressable 
+          style={styles.editButton}
+          onPress={() => setShowEditProfile(true)}
+        >
           <Text style={styles.editButtonText}>Edit profile</Text>
         </Pressable>
 
@@ -251,7 +255,6 @@ export default function Profile() {
           contentContainerStyle={styles.videoGrid}
         />
 
-        {/* Empty State */}
         {getCurrentVideos().length === 0 && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>📹</Text>
@@ -259,6 +262,13 @@ export default function Profile() {
           </View>
         )}
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <EditProfile
+        visible={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+        userData={userData}
+      />
     </View>
   );
 }
@@ -401,7 +411,7 @@ const styles = StyleSheet.create({
   },
   videoItem: {
     width: VIDEO_SIZE,
-    height: VIDEO_SIZE * 1.4, // Portrait aspect ratio like TikTok
+    height: VIDEO_SIZE * 1.4,
     marginBottom: 2,
   },
   videoThumbnail: {
