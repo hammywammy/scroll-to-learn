@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon } from '../common/icons';
 
 export default function Engagement({ likes, comments, shares, isLiked, onLike, videoUrl }) {
   const [likeAnim] = useState(new Animated.Value(1));
   const [shareAnim] = useState(new Animated.Value(1));
   const [saveAnim] = useState(new Animated.Value(1));
+  const [commentAnim] = useState(new Animated.Value(1));
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [commentText, setCommentText] = useState('');
 
   const handleShare = async () => {
     // Animate share button
@@ -36,20 +38,18 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
 
   const handleLike = () => {
     // Heart vibration and pop animation
-    Animated.parallel([
-      Animated.sequence([
-        Animated.timing(likeAnim, {
-          toValue: 1.4,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.spring(likeAnim, {
-          toValue: 1,
-          friction: 3,
-          tension: 100,
-          useNativeDriver: true,
-        }),
-      ]),
+    Animated.sequence([
+      Animated.timing(likeAnim, {
+        toValue: 1.4,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(likeAnim, {
+        toValue: 1,
+        friction: 3,
+        tension: 100,
+        useNativeDriver: true,
+      }),
     ]).start();
 
     onLike();
@@ -74,7 +74,30 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   };
 
   const handleComment = () => {
+    // Comment button animation
+    Animated.sequence([
+      Animated.timing(commentAnim, {
+        toValue: 1.2,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(commentAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     setCommentModalVisible(true);
+  };
+
+  const handlePostComment = () => {
+    if (commentText.trim()) {
+      // In a real app, this would post the comment to your backend
+      console.log('Posting comment:', commentText);
+      setCommentText('');
+      setCommentModalVisible(false);
+    }
   };
 
   // Convert likes string to number for incrementing
@@ -98,9 +121,11 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
         
         {/* Comment Button */}
         <Pressable style={styles.item} onPress={handleComment}>
-          <View style={styles.iconContainer}>
-            <CommentIcon size={34} />
-          </View>
+          <Animated.View style={{ transform: [{ scale: commentAnim }] }}>
+            <View style={styles.iconContainer}>
+              <CommentIcon size={34} />
+            </View>
+          </Animated.View>
           <Text style={styles.count}>{comments}</Text>
         </Pressable>
 
@@ -144,18 +169,28 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{comments} Comments</Text>
             
-            <View style={styles.commentsList}>
+            <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsListContent}>
               <Text style={styles.noComments}>No comments yet. Be the first!</Text>
-            </View>
+            </ScrollView>
 
             <View style={styles.commentInputContainer}>
               <TextInput
                 style={styles.commentInput}
                 placeholder="Add a comment..."
                 placeholderTextColor="#888"
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+                maxLength={500}
               />
-              <Pressable style={styles.postButton}>
-                <Text style={styles.postButtonText}>Post</Text>
+              <Pressable 
+                style={[styles.postButton, !commentText.trim() && styles.postButtonDisabled]} 
+                onPress={handlePostComment}
+                disabled={!commentText.trim()}
+              >
+                <Text style={[styles.postButtonText, !commentText.trim() && styles.postButtonTextDisabled]}>
+                  Post
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -166,6 +201,9 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
 }
 
 function formatNumber(num) {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M';
+  }
   if (num >= 1000) {
     return (num / 1000).toFixed(1) + 'k';
   }
@@ -193,6 +231,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   modalContainer: {
     flex: 1,
@@ -207,7 +248,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
     maxHeight: '80%',
   },
   modalHandle: {
@@ -224,10 +265,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
+    paddingHorizontal: 20,
   },
   commentsList: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  commentsListContent: {
     paddingVertical: 20,
   },
   noComments: {
@@ -237,7 +281,7 @@ const styles = StyleSheet.create({
   },
   commentInputContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingTop: 12,
     borderTopWidth: 1,
@@ -252,14 +296,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     marginRight: 10,
+    maxHeight: 100,
   },
   postButton: {
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
+  postButtonDisabled: {
+    opacity: 0.5,
+  },
   postButtonText: {
     color: '#fe2c55',
     fontSize: 14,
     fontWeight: '600',
+  },
+  postButtonTextDisabled: {
+    color: '#666',
   },
 });
