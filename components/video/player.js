@@ -21,6 +21,30 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
   const [likeAnimScale] = useState(new Animated.Value(0));
   const [likeAnimOpacity] = useState(new Animated.Value(0));
 
+  // Sound icon rotation animation
+  const [soundRotation] = useState(new Animated.Value(0));
+
+  // Rotate sound icon continuously when video is playing
+  useEffect(() => {
+    if (isPlaying && !isMuted) {
+      Animated.loop(
+        Animated.timing(soundRotation, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      soundRotation.stopAnimation();
+      soundRotation.setValue(0);
+    }
+  }, [isPlaying, isMuted]);
+
+  const spin = soundRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   // Handle video playback based on isActive prop
   useEffect(() => {
     const handlePlayback = async () => {
@@ -237,8 +261,33 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       <View style={styles.bottomSection}>
         <View style={styles.infoSection}>
           <Text style={styles.username}>@{video.creator}</Text>
-          <Text style={styles.description}>{video.description}</Text>
+          <Text style={styles.description} numberOfLines={2}>{video.description}</Text>
+          
+          {/* Sound/Music Button */}
+          <Pressable style={styles.soundButton}>
+            <Animated.View style={[styles.soundIcon, { transform: [{ rotate: spin }] }]}>
+              <Text style={styles.musicNote}>♪</Text>
+            </Animated.View>
+            <Text style={styles.soundText} numberOfLines={1}>
+              Original Sound - {video.creator}
+            </Text>
+          </Pressable>
         </View>
+      </View>
+      
+      {/* Profile Picture - Bottom Right (Above Engagement Buttons) */}
+      <View style={styles.profilePictureContainer}>
+        <Pressable style={styles.profilePicture}>
+          <View style={styles.profileCircle}>
+            <Text style={styles.profileInitial}>
+              {video.creator.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          {/* Follow Plus Button */}
+          <View style={styles.followPlusButton}>
+            <Text style={styles.followPlusIcon}>+</Text>
+          </View>
+        </Pressable>
       </View>
 
       {/* TikTok-Style Video Scrubber with Mini Preview */}
@@ -339,10 +388,86 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   description: {
     color: '#fff',
     fontSize: 14,
     lineHeight: 18,
+    marginBottom: 12,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  soundButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  soundIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  musicNote: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  soundText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  profilePictureContainer: {
+    position: 'absolute',
+    right: 12,
+    bottom: 260,
+    zIndex: 10,
+  },
+  profilePicture: {
+    alignItems: 'center',
+  },
+  profileCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 2,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileInitial: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  followPlusButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fe2c55',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: -12,
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  followPlusIcon: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: -2,
   },
 });
