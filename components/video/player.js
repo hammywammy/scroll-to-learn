@@ -7,7 +7,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function VideoPlayer({ video, isActive }) {
   const videoRef = useRef(null);
-  const previewVideoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -23,15 +22,28 @@ export default function VideoPlayer({ video, isActive }) {
 
   // Handle video playback based on isActive prop
   useEffect(() => {
-    if (videoRef.current) {
-      if (isActive) {
-        videoRef.current.playAsync();
-        setIsPlaying(true);
-      } else {
-        videoRef.current.pauseAsync();
-        setIsPlaying(false);
+    const handlePlayback = async () => {
+      if (videoRef.current) {
+        if (isActive) {
+          try {
+            await videoRef.current.playAsync();
+            setIsPlaying(true);
+          } catch (error) {
+            console.log('Error playing video:', error);
+          }
+        } else {
+          try {
+            await videoRef.current.pauseAsync();
+            await videoRef.current.setPositionAsync(0); // Reset to start
+            setIsPlaying(false);
+          } catch (error) {
+            console.log('Error pausing video:', error);
+          }
+        }
       }
-    }
+    };
+    
+    handlePlayback();
   }, [isActive]);
 
   // Pan responder for progress bar scrubbing
@@ -40,6 +52,7 @@ export default function VideoPlayer({ video, isActive }) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: async (evt) => {
+        evt.persist(); // Prevent event pooling issue
         setIsScrubbing(true);
         if (videoRef.current) {
           await videoRef.current.pauseAsync();
@@ -49,29 +62,23 @@ export default function VideoPlayer({ video, isActive }) {
         const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
         const newPosition = percentage * duration;
         setScrubPosition(newPosition);
-        if (previewVideoRef.current) {
-          await previewVideoRef.current.setPositionAsync(newPosition);
-        }
       },
       onPanResponderMove: async (evt, gestureState) => {
+        evt.persist(); // Prevent event pooling issue
         if (duration > 0) {
-          const touchX = evt.nativeEvent.pageX;
+          // Use gestureState.moveX for absolute position
+          const touchX = gestureState.moveX;
           const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
           const newPosition = percentage * duration;
           setScrubPosition(newPosition);
-          
-          // Update preview video position
-          if (previewVideoRef.current) {
-            await previewVideoRef.current.setPositionAsync(newPosition);
-          }
         }
       },
       onPanResponderRelease: async () => {
-        if (videoRef.current) {
+        if (videoRef.current && isScrubbing) {
           await videoRef.current.setPositionAsync(scrubPosition);
-          if (isPlaying) {
-            await videoRef.current.playAsync();
-          }
+          // Always resume playing after scrubbing
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
         setIsScrubbing(false);
       },
@@ -170,22 +177,14 @@ export default function VideoPlayer({ video, isActive }) {
         resizeMode={ResizeMode.COVER}
         isLooping
         isMuted={isMuted}
+        shouldPlay={isActive && !isScrubbing}
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
         progressUpdateIntervalMillis={100}
       />
 
-      {/* Preview Video Overlay - Shows when scrubbing */}
+      {/* Scrubbing Overlay - Dims video when scrubbing */}
       {isScrubbing && (
-        <View style={styles.previewOverlay}>
-          <Video
-            ref={previewVideoRef}
-            source={{ uri: video.url }}
-            style={styles.video}
-            resizeMode={ResizeMode.COVER}
-            isMuted={true}
-          />
-          <View style={styles.scrubbingOverlay} />
-        </View>
+        <View style={styles.scrubbingOverlay} />
       )}
       
       {/* Tap overlay for play/pause and double-tap */}
@@ -281,13 +280,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
   },
-  previewOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 10,
-  },
   scrubbingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    zIndex: 5,
   },
   tapOverlay: {
     ...StyleSheet.absoluteFillObject,
