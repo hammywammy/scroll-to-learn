@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Dimensions, StyleSheet, Pressable, Animated } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import Engagement from './engagement';
+import VideoScrubber from './scrubber';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function VideoPlayer({ video, isActive }) {
+export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -13,13 +14,7 @@ export default function VideoPlayer({ video, isActive }) {
   const [position, setPosition] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
-  const [scrubPosition, setScrubPosition] = useState(0);
   const [isVideoReady, setIsVideoReady] = useState(false);
-  
-  // Progress bar interaction state
-  const progressBarRef = useRef(null);
-  const [progressBarWidth, setProgressBarWidth] = useState(0);
-  const [progressBarX, setProgressBarX] = useState(0);
   
   // Double tap detection
   const lastTap = useRef(null);
@@ -50,84 +45,6 @@ export default function VideoPlayer({ video, isActive }) {
     
     handlePlayback();
   }, [isActive, isVideoReady, isScrubbing]);
-
-  // Handle progress bar tap - CRITICAL: Simple tap-to-seek
-  const handleProgressBarPress = async (event) => {
-    if (!isVideoReady || duration === 0 || !progressBarWidth) return;
-
-    const touchX = event.nativeEvent.locationX;
-    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
-    const newPosition = percentage * duration;
-
-    try {
-      if (videoRef.current) {
-        await videoRef.current.pauseAsync();
-        await videoRef.current.setPositionAsync(newPosition);
-        setPosition(newPosition);
-        
-        // Resume playing if active
-        if (isActive) {
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
-        }
-      }
-    } catch (error) {
-      console.log('Seek error:', error);
-    }
-  };
-
-  // Handle scrubbing start
-  const handleScrubStart = async (event) => {
-    if (!isVideoReady || duration === 0 || !progressBarWidth) return;
-
-    setIsScrubbing(true);
-    
-    const touchX = event.nativeEvent.locationX;
-    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
-    const newPosition = percentage * duration;
-    setScrubPosition(newPosition);
-
-    try {
-      if (videoRef.current) {
-        await videoRef.current.pauseAsync();
-        setIsPlaying(false);
-      }
-    } catch (error) {
-      console.log('Scrub start error:', error);
-    }
-  };
-
-  // Handle scrubbing move
-  const handleScrubMove = (event) => {
-    if (!isScrubbing || duration === 0 || !progressBarWidth) return;
-
-    const touchX = event.nativeEvent.pageX - progressBarX;
-    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
-    const newPosition = percentage * duration;
-    setScrubPosition(newPosition);
-  };
-
-  // Handle scrubbing end
-  const handleScrubEnd = async () => {
-    if (!isScrubbing || !isVideoReady) return;
-
-    try {
-      if (videoRef.current) {
-        await videoRef.current.setPositionAsync(scrubPosition);
-        setPosition(scrubPosition);
-        
-        // Resume playing if video is active
-        if (isActive) {
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
-        }
-      }
-    } catch (error) {
-      console.log('Scrub end error:', error);
-    } finally {
-      setIsScrubbing(false);
-    }
-  };
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -218,27 +135,52 @@ export default function VideoPlayer({ video, isActive }) {
     }
   };
 
-  // Measure progress bar layout
-  const onProgressBarLayout = (event) => {
-    const { width, x } = event.nativeEvent.layout;
-    setProgressBarWidth(width);
+  // Handle scrub start - pause video and notify parent to disable scroll
+  const handleScrubStart = async () => {
+    setIsScrubbing(true);
     
-    // Get absolute position
-    progressBarRef.current?.measureInWindow((x, y, width, height) => {
-      setProgressBarX(x);
-    });
+    if (videoRef.current) {
+      try {
+        await videoRef.current.pauseAsync();
+        setIsPlaying(false);
+      } catch (error) {
+        console.log('Pause error during scrub:', error);
+      }
+    }
+    
+    // Notify parent Feed component to disable scrolling
+    if (onScrubStart) {
+      onScrubStart();
+    }
   };
 
-  const formatTime = (millis) => {
-    const totalSeconds = Math.floor(millis / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  // Handle seek - update video position
+  const handleSeek = async (newPosition) => {
+    if (!videoRef.current || !isVideoReady) return;
+
+    try {
+      await videoRef.current.setPositionAsync(newPosition);
+      setPosition(newPosition);
+      
+      // Resume playing if video is active
+      if (isActive) {
+        await videoRef.current.playAsync();
+        setIsPlaying(true);
+      }
+    } catch (error) {
+      console.log('Seek error:', error);
+    }
   };
 
-  const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
-  const scrubPercentage = duration > 0 ? (scrubPosition / duration) * 100 : 0;
-  const displayedPercentage = isScrubbing ? scrubPercentage : progressPercentage;
+  // Handle scrub end - notify parent to enable scroll
+  const handleScrubEnd = () => {
+    setIsScrubbing(false);
+    
+    // Notify parent Feed component to enable scrolling
+    if (onScrubEnd) {
+      onScrubEnd();
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -255,7 +197,7 @@ export default function VideoPlayer({ video, isActive }) {
         progressUpdateIntervalMillis={100}
       />
 
-      {/* Scrubbing Overlay */}
+      {/* Scrubbing Overlay - dims video slightly */}
       {isScrubbing && (
         <View style={styles.scrubbingOverlay} />
       )}
@@ -299,56 +241,17 @@ export default function VideoPlayer({ video, isActive }) {
         </View>
       </View>
 
-      {/* TikTok-Style Progress Bar - FIXED VERSION */}
-      <View style={styles.progressSection}>
-        {/* Time Display - Shows when scrubbing */}
-        {isScrubbing && (
-          <View 
-            style={[
-              styles.timeDisplay,
-              { left: `${scrubPercentage}%` }
-            ]}
-          >
-            <Text style={styles.timeText}>{formatTime(scrubPosition)}</Text>
-          </View>
-        )}
-
-        {/* Progress Bar Container with Touch Handlers */}
-        <View
-          ref={progressBarRef}
-          style={styles.progressBarContainer}
-          onLayout={onProgressBarLayout}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={handleScrubStart}
-          onResponderMove={handleScrubMove}
-          onResponderRelease={handleScrubEnd}
-          onResponderTerminate={handleScrubEnd}
-        >
-          {/* Background Bar */}
-          <View style={styles.progressBar}>
-            {/* Filled Progress */}
-            <View 
-              style={[
-                styles.progressFill, 
-                { width: `${displayedPercentage}%` }
-              ]} 
-            />
-          </View>
-          
-          {/* Progress Thumb/Dot - Only visible when scrubbing or hovering */}
-          {(isScrubbing || displayedPercentage > 0) && (
-            <View 
-              style={[
-                styles.progressThumb, 
-                { 
-                  left: `${displayedPercentage}%`,
-                  opacity: isScrubbing ? 1 : 0.8
-                }
-              ]} 
-            />
-          )}
-        </View>
-      </View>
+      {/* TikTok-Style Video Scrubber with Mini Preview */}
+      <VideoScrubber
+        videoRef={videoRef}
+        videoUrl={video.url}
+        duration={duration}
+        position={position}
+        isActive={isActive}
+        onSeek={handleSeek}
+        onScrubStart={handleScrubStart}
+        onScrubEnd={handleScrubEnd}
+      />
       
       {/* Engagement Buttons */}
       <Engagement 
@@ -441,56 +344,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     lineHeight: 18,
-  },
-  progressSection: {
-    position: 'absolute',
-    bottom: 70,
-    left: 0,
-    right: 0,
-    zIndex: 3,
-  },
-  timeDisplay: {
-    position: 'absolute',
-    top: -35,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    marginLeft: -30, // Center above thumb
-  },
-  timeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  progressBarContainer: {
-    height: 30, // Larger touch target
-    justifyContent: 'center',
-    paddingHorizontal: 0,
-  },
-  progressBar: {
-    height: 3, // Thin like TikTok
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    width: '100%',
-    borderRadius: 1.5,
-  },
-  progressFill: {
-    height: 3,
-    backgroundColor: '#fff',
-    borderRadius: 1.5,
-  },
-  progressThumb: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#fff',
-    marginLeft: -6, // Center on position
-    top: 9, // Center vertically in 30px container
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
   },
 });
