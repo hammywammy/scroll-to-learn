@@ -7,13 +7,14 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function VideoPlayer({ video, isActive }) {
   const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(isActive); // Start with isActive state
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubPosition, setScrubPosition] = useState(0);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   
   // Double tap detection
   const lastTap = useRef(null);
@@ -23,7 +24,7 @@ export default function VideoPlayer({ video, isActive }) {
   // Handle video playback based on isActive prop
   useEffect(() => {
     const handlePlayback = async () => {
-      if (videoRef.current) {
+      if (videoRef.current && isVideoReady) {
         if (isActive) {
           try {
             await videoRef.current.playAsync();
@@ -44,7 +45,7 @@ export default function VideoPlayer({ video, isActive }) {
     };
     
     handlePlayback();
-  }, [isActive]);
+  }, [isActive, isVideoReady]);
 
   // Pan responder for progress bar scrubbing
   const progressPanResponder = useRef(
@@ -52,18 +53,28 @@ export default function VideoPlayer({ video, isActive }) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: async (evt) => {
+        if (!isVideoReady) return;
+        
         evt.persist(); // Prevent event pooling issue
         setIsScrubbing(true);
-        if (videoRef.current) {
-          await videoRef.current.pauseAsync();
-        }
+        
         // Calculate initial scrub position from tap location
         const touchX = evt.nativeEvent.locationX;
         const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
         const newPosition = percentage * duration;
         setScrubPosition(newPosition);
+        
+        try {
+          if (videoRef.current) {
+            await videoRef.current.pauseAsync();
+          }
+        } catch (error) {
+          console.log('Pause error:', error);
+        }
       },
-      onPanResponderMove: async (evt, gestureState) => {
+      onPanResponderMove: (evt, gestureState) => {
+        if (!isVideoReady) return;
+        
         evt.persist(); // Prevent event pooling issue
         if (duration > 0) {
           // Use gestureState.moveX for absolute position
@@ -74,12 +85,19 @@ export default function VideoPlayer({ video, isActive }) {
         }
       },
       onPanResponderRelease: async () => {
-        if (videoRef.current && isScrubbing) {
-          await videoRef.current.setPositionAsync(scrubPosition);
-          // Always resume playing after scrubbing
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
+        if (!isVideoReady || !isScrubbing) return;
+        
+        try {
+          if (videoRef.current) {
+            await videoRef.current.setPositionAsync(scrubPosition);
+            // Always resume playing after scrubbing
+            await videoRef.current.playAsync();
+            setIsPlaying(true);
+          }
+        } catch (error) {
+          console.log('Scrub release error:', error);
         }
+        
         setIsScrubbing(false);
       },
     })
@@ -148,6 +166,9 @@ export default function VideoPlayer({ video, isActive }) {
 
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
+      if (!isVideoReady) {
+        setIsVideoReady(true);
+      }
       setDuration(status.durationMillis || 0);
       if (!isScrubbing) {
         setPosition(status.positionMillis || 0);
