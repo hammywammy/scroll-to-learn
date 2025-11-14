@@ -7,7 +7,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function VideoPlayer({ video, isActive }) {
   const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(isActive); // Start with isActive state
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
@@ -21,41 +21,41 @@ export default function VideoPlayer({ video, isActive }) {
   const [likeAnimScale] = useState(new Animated.Value(0));
   const [likeAnimOpacity] = useState(new Animated.Value(0));
 
-  // Handle video playback based on isActive prop
+  // Handle video playback based on isActive prop - CRITICAL for TikTok behavior
   useEffect(() => {
     const handlePlayback = async () => {
-      if (videoRef.current && isVideoReady) {
+      if (!videoRef.current) return;
+
+      try {
         if (isActive) {
-          try {
+          // Only play if video is ready
+          if (isVideoReady) {
             await videoRef.current.playAsync();
             setIsPlaying(true);
-          } catch (error) {
-            console.log('Error playing video:', error);
           }
         } else {
-          try {
-            await videoRef.current.pauseAsync();
-            await videoRef.current.setPositionAsync(0); // Reset to start
-            setIsPlaying(false);
-          } catch (error) {
-            console.log('Error pausing video:', error);
-          }
+          // Pause and reset non-active videos
+          await videoRef.current.pauseAsync();
+          await videoRef.current.setPositionAsync(0);
+          setIsPlaying(false);
+          setPosition(0);
         }
+      } catch (error) {
+        console.log('Playback control error:', error);
       }
     };
     
     handlePlayback();
   }, [isActive, isVideoReady]);
 
-  // Pan responder for progress bar scrubbing
+  // Pan responder for progress bar scrubbing - FIXED version
   const progressPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: async (evt) => {
-        if (!isVideoReady) return;
+        if (!isVideoReady || duration === 0) return;
         
-        evt.persist(); // Prevent event pooling issue
         setIsScrubbing(true);
         
         // Calculate initial scrub position from tap location
@@ -73,32 +73,32 @@ export default function VideoPlayer({ video, isActive }) {
         }
       },
       onPanResponderMove: (evt, gestureState) => {
-        if (!isVideoReady) return;
+        if (!isVideoReady || duration === 0) return;
         
-        evt.persist(); // Prevent event pooling issue
-        if (duration > 0) {
-          // Use gestureState.moveX for absolute position
-          const touchX = gestureState.moveX;
-          const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
-          const newPosition = percentage * duration;
-          setScrubPosition(newPosition);
-        }
+        // Use the absolute X position on screen
+        const touchX = gestureState.moveX;
+        const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
+        const newPosition = percentage * duration;
+        setScrubPosition(newPosition);
       },
       onPanResponderRelease: async () => {
         if (!isVideoReady || !isScrubbing) return;
         
         try {
           if (videoRef.current) {
+            // Seek to the scrubbed position
             await videoRef.current.setPositionAsync(scrubPosition);
-            // Always resume playing after scrubbing
-            await videoRef.current.playAsync();
-            setIsPlaying(true);
+            // Resume playing if video was active
+            if (isActive) {
+              await videoRef.current.playAsync();
+              setIsPlaying(true);
+            }
           }
         } catch (error) {
           console.log('Scrub release error:', error);
+        } finally {
+          setIsScrubbing(false);
         }
-        
-        setIsScrubbing(false);
       },
     })
   ).current;
@@ -142,7 +142,9 @@ export default function VideoPlayer({ video, isActive }) {
   };
 
   const handlePlayPause = async () => {
-    if (videoRef.current) {
+    if (!videoRef.current || !isActive) return;
+    
+    try {
       if (isPlaying) {
         await videoRef.current.pauseAsync();
         setIsPlaying(false);
@@ -150,13 +152,19 @@ export default function VideoPlayer({ video, isActive }) {
         await videoRef.current.playAsync();
         setIsPlaying(true);
       }
+    } catch (error) {
+      console.log('Play/pause error:', error);
     }
   };
 
   const handleMuteToggle = async () => {
-    if (videoRef.current) {
+    if (!videoRef.current) return;
+    
+    try {
       await videoRef.current.setIsMutedAsync(!isMuted);
       setIsMuted(!isMuted);
+    } catch (error) {
+      console.log('Mute toggle error:', error);
     }
   };
 
@@ -166,14 +174,22 @@ export default function VideoPlayer({ video, isActive }) {
 
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
+      // Mark video as ready when first loaded
       if (!isVideoReady) {
         setIsVideoReady(true);
       }
+      
       setDuration(status.durationMillis || 0);
+      
+      // Only update position if not scrubbing
       if (!isScrubbing) {
         setPosition(status.positionMillis || 0);
       }
+      
       setIsPlaying(status.isPlaying);
+    } else if (status.error) {
+      console.log('Video error:', status.error);
+      setIsVideoReady(false);
     }
   };
 
@@ -186,7 +202,6 @@ export default function VideoPlayer({ video, isActive }) {
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const scrubPercentage = duration > 0 ? (scrubPosition / duration) * 100 : 0;
-  const displayPosition = isScrubbing ? scrubPosition : position;
 
   return (
     <View style={styles.container}>
@@ -198,7 +213,7 @@ export default function VideoPlayer({ video, isActive }) {
         resizeMode={ResizeMode.COVER}
         isLooping
         isMuted={isMuted}
-        shouldPlay={isActive && !isScrubbing}
+        shouldPlay={false} // Control via ref instead
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
         progressUpdateIntervalMillis={100}
       />
@@ -214,7 +229,7 @@ export default function VideoPlayer({ video, isActive }) {
         onPress={handleDoubleTap}
       >
         {/* Play button when paused */}
-        {!isPlaying && !isScrubbing && (
+        {!isPlaying && !isScrubbing && isActive && (
           <View style={styles.playButton}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
