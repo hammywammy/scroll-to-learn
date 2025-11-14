@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import Login from './app/auth/login';    // Make sure this path is correct
-import MainApp from './app/index';       // Make sure this path is correct
+import Onboarding from './app/auth/onboarding';
+import MainApp from './app/index';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userData, setUserData] = useState(null);
+
+  const handleOnboardingComplete = (data) => {
+    setUserData(data);
+    setIsAuthenticated(true);
+  };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       {!isAuthenticated ? (
-        <Login onLogin={() => setIsAuthenticated(true)} />
+        <Onboarding onComplete={handleOnboardingComplete} />
       ) : (
-        <MainApp />
+        <MainApp userData={userData} />
       )}
     </View>
   );
