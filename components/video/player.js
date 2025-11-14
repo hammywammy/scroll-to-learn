@@ -8,14 +8,12 @@ import UserProfileView from '../profile/UserProfileView';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
- * OPTIMIZED VIDEO PLAYER - expo-video (NEW)
+ * WORKING VIDEO PLAYER - expo-video
  * 
- * KEY CHANGES FROM expo-av:
- * 1. Using useVideoPlayer hook (10x better performance)
- * 2. No more progressUpdateIntervalMillis spam (was 10 updates/sec!)
- * 3. VideoView instead of Video component
- * 4. Proper cleanup and memory management
- * 5. Simplified state management
+ * FIXES:
+ * 1. useVideoPlayer needs { uri: string }, not string
+ * 2. VideoView needs explicit width/height
+ * 3. Proper event listeners
  */
 
 const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoad }) => {
@@ -32,31 +30,34 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
   const [likeAnimOpacity] = useState(new Animated.Value(0));
   const [soundRotation] = useState(new Animated.Value(0));
 
-  // CRITICAL: useVideoPlayer hook - modern expo-video API
-  const player = useVideoPlayer(shouldLoad ? video.url : null, (player) => {
-    player.loop = true;
-    player.muted = isMuted;
-  });
+  // CRITICAL: Pass { uri: url } format
+  const player = useVideoPlayer(
+    shouldLoad ? { uri: video.url } : null,
+    (player) => {
+      player.loop = true;
+      player.muted = isMuted;
+    }
+  );
 
-  // Track playback status WITHOUT constant updates
+  // Track time updates
   useEffect(() => {
     if (!player) return;
 
-    const subscription = player.addListener('statusChange', (status) => {
-      if (status.duration) {
-        setDuration(status.duration * 1000); // Convert to ms
-      }
-      if (status.currentTime && !isScrubbing) {
-        setPosition(status.currentTime * 1000); // Convert to ms
+    const subscription = player.addListener('timeUpdate', ({ currentTime }) => {
+      if (!isScrubbing && currentTime !== undefined) {
+        setPosition(currentTime * 1000);
+        if (duration === 0 && player.duration) {
+          setDuration(player.duration * 1000);
+        }
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [player, isScrubbing]);
+  }, [player, isScrubbing, duration]);
 
-  // Handle video playback based on isActive
+  // Handle playback
   useEffect(() => {
     if (!player || !shouldLoad) return;
 
@@ -76,9 +77,9 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
     }
   }, [isActive, player]);
 
-  // Rotate sound icon when playing
+  // Rotate sound icon
   useEffect(() => {
-    if (isActive && !isMuted && !isScrubbing) {
+    if (isActive && !isMuted && !isScrubbing && player?.playing) {
       Animated.loop(
         Animated.timing(soundRotation, {
           toValue: 1,
@@ -90,7 +91,7 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
       soundRotation.stopAnimation();
       soundRotation.setValue(0);
     }
-  }, [isActive, isMuted, isScrubbing]);
+  }, [isActive, isMuted, isScrubbing, player?.playing]);
 
   const spin = soundRotation.interpolate({
     inputRange: [0, 1],
@@ -104,7 +105,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
     if (lastTap.current && now - lastTap.current < DOUBLE_TAP_DELAY) {
       handleLike();
       
-      // Animate heart
       likeAnimScale.setValue(0);
       likeAnimOpacity.setValue(1);
       
@@ -167,7 +167,7 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
   const handleSeek = useCallback(async (newPosition) => {
     if (!player) return;
 
-    player.currentTime = newPosition / 1000; // Convert ms to seconds
+    player.currentTime = newPosition / 1000;
     setPosition(newPosition);
     
     if (isActive) {
@@ -182,7 +182,7 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
     }
   }, [onScrubEnd]);
 
-  // Don't render if shouldn't load - saves MASSIVE memory
+  // Don't render if shouldn't load
   if (!shouldLoad) {
     return (
       <View style={styles.container}>
@@ -195,7 +195,7 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
 
   return (
     <View style={styles.container}>
-      {/* Main Video - expo-video VideoView */}
+      {/* Main Video - CRITICAL: explicit width/height */}
       <VideoView
         style={styles.video}
         player={player}
@@ -203,24 +203,15 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         contentFit="cover"
       />
 
-      {/* Scrubbing Overlay */}
-      {isScrubbing && (
-        <View style={styles.scrubbingOverlay} />
-      )}
+      {isScrubbing && <View style={styles.scrubbingOverlay} />}
       
-      {/* Tap overlay */}
-      <Pressable 
-        style={styles.tapOverlay} 
-        onPress={handleDoubleTap}
-      >
-        {/* Play button when paused */}
+      <Pressable style={styles.tapOverlay} onPress={handleDoubleTap}>
         {!player?.playing && !isScrubbing && isActive && (
           <View style={styles.playButton}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
         )}
 
-        {/* Double-tap heart animation */}
         <Animated.View 
           style={[
             styles.doubleTapHeart,
@@ -234,18 +225,15 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         </Animated.View>
       </Pressable>
 
-      {/* Mute Button */}
       <Pressable style={styles.muteButton} onPress={handleMuteToggle}>
         <Text style={styles.muteIcon}>{isMuted ? '🔇' : '🔊'}</Text>
       </Pressable>
 
-      {/* Bottom Section */}
       <View style={styles.bottomSection}>
         <View style={styles.infoSection}>
           <Text style={styles.username}>@{video.creator}</Text>
           <Text style={styles.description} numberOfLines={2}>{video.description}</Text>
           
-          {/* Sound Button */}
           <Pressable style={styles.soundButton}>
             <Animated.View style={[styles.soundIcon, { transform: [{ rotate: spin }] }]}>
               <Text style={styles.musicNote}>♪</Text>
@@ -257,7 +245,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         </View>
       </View>
       
-      {/* Profile Picture */}
       <View style={styles.profilePictureContainer}>
         <Pressable 
           style={styles.profilePicture}
@@ -274,7 +261,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         </Pressable>
       </View>
 
-      {/* Video Scrubber */}
       <VideoScrubber
         player={player}
         videoUrl={video.url}
@@ -286,7 +272,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         onScrubEnd={handleScrubEnd}
       />
       
-      {/* Engagement Buttons */}
       <Engagement 
         likes={video.likes}
         comments={video.comments}
@@ -297,7 +282,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
         isPlaying={player?.playing || false}
       />
 
-      {/* User Profile Modal */}
       <UserProfileView
         visible={showUserProfile}
         onClose={() => setShowUserProfile(false)}
@@ -306,7 +290,6 @@ const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoa
     </View>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if these props change
   return (
     prevProps.isActive === nextProps.isActive &&
     prevProps.shouldLoad === nextProps.shouldLoad &&
@@ -321,11 +304,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   video: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   placeholder: {
     flex: 1,
