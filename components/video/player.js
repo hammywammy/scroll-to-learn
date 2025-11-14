@@ -3,6 +3,7 @@ import { View, Text, Dimensions, StyleSheet, Pressable, Animated } from 'react-n
 import { Video, ResizeMode } from 'expo-av';
 import Engagement from './engagement';
 import VideoScrubber from './scrubber';
+import UserProfileView from '../profile/UserProfileView';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -15,6 +16,7 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
   const [isLiked, setIsLiked] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
   
   // Double tap detection
   const lastTap = useRef(null);
@@ -277,7 +279,10 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       
       {/* Profile Picture - Bottom Right (Above Engagement Buttons) */}
       <View style={styles.profilePictureContainer}>
-        <Pressable style={styles.profilePicture}>
+        <Pressable 
+          style={styles.profilePicture}
+          onPress={() => setShowUserProfile(true)}
+        >
           <View style={styles.profileCircle}>
             <Text style={styles.profileInitial}>
               {video.creator.charAt(0).toUpperCase()}
@@ -310,6 +315,13 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
         isLiked={isLiked}
         onLike={handleLike}
         videoUrl={video.url}
+      />
+
+      {/* User Profile Modal */}
+      <UserProfileView
+        visible={showUserProfile}
+        onClose={() => setShowUserProfile(false)}
+        username={video.creator}
       />
     </View>
   );
@@ -432,7 +444,7 @@ const styles = StyleSheet.create({
   profilePictureContainer: {
     position: 'absolute',
     right: 12,
-    bottom: 260,
+    bottom: 320, // Moved up to avoid engagement buttons
     zIndex: 10,
   },
   profilePicture: {
