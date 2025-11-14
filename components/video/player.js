@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { View, Text, Dimensions, StyleSheet, Pressable, Animated } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import Engagement from './engagement';
@@ -7,7 +7,8 @@ import UserProfileView from '../profile/UserProfileView';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd }) {
+// Memoized component - only re-renders when isActive changes
+const VideoPlayer = memo(({ video, isActive, onScrubStart, onScrubEnd, shouldLoad }) => {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -22,9 +23,10 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
   const lastTap = useRef(null);
   const [likeAnimScale] = useState(new Animated.Value(0));
   const [likeAnimOpacity] = useState(new Animated.Value(0));
-
-  // Sound icon rotation animation
   const [soundRotation] = useState(new Animated.Value(0));
+
+  // Preload video when shouldLoad is true (even if not active)
+  const shouldPlayVideo = isActive && isVideoReady && !isScrubbing;
 
   // Rotate sound icon continuously when video is playing
   useEffect(() => {
@@ -53,16 +55,13 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       if (!videoRef.current) return;
 
       try {
-        if (isActive) {
-          if (isVideoReady && !isScrubbing) {
-            await videoRef.current.playAsync();
-            setIsPlaying(true);
-          }
+        if (shouldPlayVideo) {
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
         } else {
           await videoRef.current.pauseAsync();
-          await videoRef.current.setPositionAsync(0);
           setIsPlaying(false);
-          setPosition(0);
+          // Don't reset position when pausing - allows resuming
         }
       } catch (error) {
         console.log('Playback control error:', error);
@@ -70,7 +69,24 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
     };
     
     handlePlayback();
-  }, [isActive, isVideoReady, isScrubbing]);
+  }, [shouldPlayVideo]);
+
+  // Reset video when not active and user scrolls away
+  useEffect(() => {
+    if (!isActive && videoRef.current) {
+      const resetVideo = async () => {
+        try {
+          await videoRef.current.pauseAsync();
+          await videoRef.current.setPositionAsync(0);
+          setIsPlaying(false);
+          setPosition(0);
+        } catch (error) {
+          // Ignore errors on cleanup
+        }
+      };
+      resetVideo();
+    }
+  }, [isActive]);
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -149,7 +165,6 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       
       setDuration(status.durationMillis || 0);
       
-      // Only update position if not scrubbing
       if (!isScrubbing) {
         setPosition(status.positionMillis || 0);
       }
@@ -161,7 +176,6 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
     }
   };
 
-  // Handle scrub start - pause video and notify parent to disable scroll
   const handleScrubStart = async () => {
     setIsScrubbing(true);
     
@@ -174,13 +188,11 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       }
     }
     
-    // Notify parent Feed component to disable scrolling
     if (onScrubStart) {
       onScrubStart();
     }
   };
 
-  // Handle seek - update video position
   const handleSeek = async (newPosition) => {
     if (!videoRef.current || !isVideoReady) return;
 
@@ -188,7 +200,6 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       await videoRef.current.setPositionAsync(newPosition);
       setPosition(newPosition);
       
-      // Resume playing if video is active
       if (isActive) {
         await videoRef.current.playAsync();
         setIsPlaying(true);
@@ -198,15 +209,25 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
     }
   };
 
-  // Handle scrub end - notify parent to enable scroll
   const handleScrubEnd = () => {
     setIsScrubbing(false);
     
-    // Notify parent Feed component to enable scrolling
     if (onScrubEnd) {
       onScrubEnd();
     }
   };
+
+  // Don't render video component if it shouldn't be loaded
+  // This saves massive memory
+  if (!shouldLoad) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -221,9 +242,16 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
         shouldPlay={false}
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
         progressUpdateIntervalMillis={100}
+        // CRITICAL OPTIMIZATIONS
+        useNativeControls={false}
+        usePoster={false}
+        // Preload video even when not playing
+        shouldCorrectPitch={true}
+        // Lower quality for better performance
+        videoStyle={styles.video}
       />
 
-      {/* Scrubbing Overlay - dims video slightly */}
+      {/* Scrubbing Overlay */}
       {isScrubbing && (
         <View style={styles.scrubbingOverlay} />
       )}
@@ -259,7 +287,7 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
         <Text style={styles.muteIcon}>{isMuted ? '🔇' : '🔊'}</Text>
       </Pressable>
 
-      {/* Bottom Section - TikTok Style */}
+      {/* Bottom Section */}
       <View style={styles.bottomSection}>
         <View style={styles.infoSection}>
           <Text style={styles.username}>@{video.creator}</Text>
@@ -277,7 +305,7 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
         </View>
       </View>
       
-      {/* Profile Picture - Bottom Right (Above Engagement Buttons) */}
+      {/* Profile Picture */}
       <View style={styles.profilePictureContainer}>
         <Pressable 
           style={styles.profilePicture}
@@ -288,14 +316,13 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
               {video.creator.charAt(0).toUpperCase()}
             </Text>
           </View>
-          {/* Follow Plus Button */}
           <View style={styles.followPlusButton}>
             <Text style={styles.followPlusIcon}>+</Text>
           </View>
         </Pressable>
       </View>
 
-      {/* TikTok-Style Video Scrubber with Mini Preview */}
+      {/* Video Scrubber */}
       <VideoScrubber
         videoRef={videoRef}
         videoUrl={video.url}
@@ -326,12 +353,20 @@ export default function VideoPlayer({ video, isActive, onScrubStart, onScrubEnd 
       />
     </View>
   );
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if these props change
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.shouldLoad === nextProps.shouldLoad &&
+    prevProps.video.id === nextProps.video.id
+  );
+});
 
 const styles = StyleSheet.create({
   container: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+    backgroundColor: '#000',
   },
   video: {
     position: 'absolute',
@@ -339,6 +374,16 @@ const styles = StyleSheet.create({
     left: 0,
     bottom: 0,
     right: 0,
+  },
+  placeholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  placeholderText: {
+    color: '#666',
+    fontSize: 14,
   },
   scrubbingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -445,7 +490,7 @@ const styles = StyleSheet.create({
   profilePictureContainer: {
     position: 'absolute',
     right: 12,
-    bottom: 380, // Much higher - well above engagement buttons
+    bottom: 380,
     zIndex: 10,
   },
   profilePicture: {
@@ -484,3 +529,5 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
 });
+
+export default VideoPlayer;
