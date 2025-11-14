@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated, Image, Platform } from 'react-native';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Cache thumbnails to avoid regenerating
+const thumbnailCache = new Map();
 
 export default function VideoScrubber({ 
   videoRef, 
@@ -17,14 +21,77 @@ export default function VideoScrubber({
   const [scrubPosition, setScrubPosition] = useState(0);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [thumbnailUri, setThumbnailUri] = useState(null);
+  const [isLoadingThumbnail, setIsLoadingThumbnail] = useState(false);
   
   const progressBarRef = useRef(null);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [progressBarX, setProgressBarX] = useState(0);
+  const thumbnailTimeout = useRef(null);
+  const lastGeneratedTime = useRef(-1);
 
   // Preview animation
   const [previewScale] = useState(new Animated.Value(0));
   const [previewOpacity] = useState(new Animated.Value(0));
+
+  // Generate thumbnail at scrub position (optimized)
+  useEffect(() => {
+    if (!isScrubbing || !videoUrl || scrubPosition <= 0 || duration <= 0) {
+      return;
+    }
+
+    // Clear previous timeout
+    if (thumbnailTimeout.current) {
+      clearTimeout(thumbnailTimeout.current);
+    }
+
+    // Debounce - only generate after 100ms of no movement
+    thumbnailTimeout.current = setTimeout(async () => {
+      // Round to nearest second for caching
+      const timeInSeconds = Math.floor(scrubPosition / 1000);
+      
+      // Don't regenerate if we just generated this second
+      if (timeInSeconds === lastGeneratedTime.current) {
+        return;
+      }
+
+      const cacheKey = `${videoUrl}_${timeInSeconds}`;
+      
+      // Check cache first
+      if (thumbnailCache.has(cacheKey)) {
+        setThumbnailUri(thumbnailCache.get(cacheKey));
+        lastGeneratedTime.current = timeInSeconds;
+        return;
+      }
+
+      setIsLoadingThumbnail(true);
+
+      try {
+        const { uri } = await VideoThumbnails.getThumbnailAsync(
+          videoUrl,
+          {
+            time: scrubPosition,
+            quality: 0.75, // TikTok-like quality
+          }
+        );
+        
+        // Cache the thumbnail
+        thumbnailCache.set(cacheKey, uri);
+        setThumbnailUri(uri);
+        lastGeneratedTime.current = timeInSeconds;
+      } catch (error) {
+        console.log('Thumbnail generation error:', error);
+      } finally {
+        setIsLoadingThumbnail(false);
+      }
+    }, 100); // 100ms debounce
+
+    return () => {
+      if (thumbnailTimeout.current) {
+        clearTimeout(thumbnailTimeout.current);
+      }
+    };
+  }, [scrubPosition, isScrubbing, videoUrl, duration]);
 
   // Show preview with animation
   const showPreviewWithAnimation = () => {
@@ -60,6 +127,8 @@ export default function VideoScrubber({
       }),
     ]).start(() => {
       setShowPreview(false);
+      setThumbnailUri(null);
+      lastGeneratedTime.current = -1;
     });
   };
 
@@ -134,7 +203,7 @@ export default function VideoScrubber({
   const displayedPercentage = isScrubbing ? scrubPercentage : progressPercentage;
 
   // Calculate preview position (centered above thumb, with screen edge protection)
-  const previewWidth = 80; // Smaller since it's just time now
+  const previewWidth = 100;
   const previewLeft = Math.max(
     10, // Min distance from left edge
     Math.min(
@@ -145,7 +214,7 @@ export default function VideoScrubber({
 
   return (
     <View style={styles.container}>
-      {/* TikTok-Style Time Preview (Simple & Fast) */}
+      {/* TikTok-Style Thumbnail Preview */}
       {showPreview && (
         <Animated.View 
           style={[
@@ -157,15 +226,30 @@ export default function VideoScrubber({
             },
           ]}
         >
-          {/* Time Display */}
-          <View style={styles.previewTimeBox}>
-            <Text style={styles.previewTimeText}>
+          {/* Thumbnail Preview Window */}
+          <View style={styles.thumbnailWrapper}>
+            {thumbnailUri ? (
+              <Image
+                source={{ uri: thumbnailUri }}
+                style={styles.thumbnailImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.thumbnailLoading}>
+                <Text style={styles.loadingDots}>•••</Text>
+              </View>
+            )}
+          </View>
+          
+          {/* Time Label */}
+          <View style={styles.timeLabel}>
+            <Text style={styles.timeText}>
               {formatTime(scrubPosition)}
             </Text>
           </View>
 
           {/* Triangle pointer */}
-          <View style={styles.previewTriangle} />
+          <View style={styles.triangle} />
         </Animated.View>
       )}
 
@@ -201,7 +285,7 @@ export default function VideoScrubber({
               { 
                 left: `${displayedPercentage}%`,
                 opacity: isScrubbing ? 1 : 0.8,
-                transform: [{ scale: isScrubbing ? 1.2 : 1 }],
+                transform: [{ scale: isScrubbing ? 1.3 : 1 }],
               }
             ]} 
           />
@@ -252,37 +336,66 @@ const styles = StyleSheet.create({
   previewContainer: {
     position: 'absolute',
     bottom: 45, // Above progress bar
+    width: 100,
     alignItems: 'center',
   },
-  previewTimeBox: {
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  thumbnailWrapper: {
+    width: 100,
+    height: 177, // 16:9 vertical aspect ratio (100 * 1.77)
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 15,
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbnailLoading: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  loadingDots: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
+    opacity: 0.5,
+  },
+  timeLabel: {
+    marginTop: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 8,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  previewTimeText: {
+  timeText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  previewTriangle: {
+  triangle: {
     width: 0,
     height: 0,
     backgroundColor: 'transparent',
     borderStyle: 'solid',
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 6,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 8,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: 'rgba(0, 0, 0, 0.8)',
-    marginTop: -2,
+    borderTopColor: 'rgba(0, 0, 0, 0.95)',
+    marginTop: -1,
   },
 });
