@@ -42,10 +42,6 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
     outputRange: ['0deg', '360deg'],
   });
 
-  // Heart pop animation that appears on double-tap
-  const [heartPopAnim] = useState(new Animated.Value(0));
-  const [heartPopOpacity] = useState(new Animated.Value(0));
-
   const handleShare = async () => {
     // Animate share button with bounce
     Animated.sequence([
