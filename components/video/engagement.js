@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView, Dimensions } from 'react-native';
 import { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon } from '../common/icons';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Engagement({ likes, comments, shares, isLiked, onLike, videoUrl }) {
   const [likeAnim] = useState(new Animated.Value(1));
@@ -11,17 +13,23 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   const [isSaved, setIsSaved] = useState(false);
   const [commentText, setCommentText] = useState('');
 
+  // Heart pop animation that appears on double-tap
+  const [heartPopAnim] = useState(new Animated.Value(0));
+  const [heartPopOpacity] = useState(new Animated.Value(0));
+
   const handleShare = async () => {
-    // Animate share button
+    // Animate share button with bounce
     Animated.sequence([
-      Animated.timing(shareAnim, {
-        toValue: 1.2,
-        duration: 100,
+      Animated.spring(shareAnim, {
+        toValue: 1.3,
+        friction: 3,
+        tension: 40,
         useNativeDriver: true,
       }),
-      Animated.timing(shareAnim, {
+      Animated.spring(shareAnim, {
         toValue: 1,
-        duration: 100,
+        friction: 3,
+        tension: 40,
         useNativeDriver: true,
       }),
     ]).start();
@@ -37,35 +45,63 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   };
 
   const handleLike = () => {
-    // Heart vibration and pop animation
-    Animated.sequence([
-      Animated.timing(likeAnim, {
-        toValue: 1.4,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(likeAnim, {
-        toValue: 1,
-        friction: 3,
-        tension: 100,
-        useNativeDriver: true,
-      }),
+    // SATISFYING Heart animation - pops and bounces
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(likeAnim, {
+          toValue: 1.5,
+          friction: 2,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+        Animated.spring(likeAnim, {
+          toValue: 1,
+          friction: 3,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]),
     ]).start();
+
+    // Show big heart pop (like TikTok double-tap)
+    if (!isLiked) {
+      heartPopOpacity.setValue(1);
+      heartPopAnim.setValue(0);
+      
+      Animated.parallel([
+        Animated.spring(heartPopAnim, {
+          toValue: 1,
+          friction: 4,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heartPopOpacity, {
+          toValue: 0,
+          duration: 800,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
 
     onLike();
   };
 
   const handleSave = () => {
-    // Bookmark subtle animation
+    // SATISFYING Bookmark animation - smooth scale with slight rotation
     Animated.sequence([
-      Animated.timing(saveAnim, {
-        toValue: 1.15,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(saveAnim, {
+      Animated.parallel([
+        Animated.spring(saveAnim, {
+          toValue: 1.3,
+          friction: 3,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.spring(saveAnim, {
         toValue: 1,
-        duration: 150,
+        friction: 3,
+        tension: 40,
         useNativeDriver: true,
       }),
     ]).start();
@@ -74,29 +110,31 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   };
 
   const handleComment = () => {
-    // Comment button animation
+    // SATISFYING Comment animation - bouncy
     Animated.sequence([
-      Animated.timing(commentAnim, {
-        toValue: 1.2,
-        duration: 100,
+      Animated.spring(commentAnim, {
+        toValue: 1.3,
+        friction: 3,
+        tension: 40,
         useNativeDriver: true,
       }),
-      Animated.timing(commentAnim, {
+      Animated.spring(commentAnim, {
         toValue: 1,
-        duration: 100,
+        friction: 3,
+        tension: 40,
         useNativeDriver: true,
       }),
     ]).start();
 
+    // Open modal - video will shrink in parent component
     setCommentModalVisible(true);
   };
 
   const handlePostComment = () => {
     if (commentText.trim()) {
-      // In a real app, this would post the comment to your backend
       console.log('Posting comment:', commentText);
       setCommentText('');
-      setCommentModalVisible(false);
+      // Don't close modal - let user keep commenting (TikTok behavior)
     }
   };
 
@@ -109,7 +147,7 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   return (
     <>
       <View style={styles.container}>
-        {/* Like Button */}
+        {/* Like Button with satisfying animation */}
         <Pressable style={styles.item} onPress={handleLike}>
           <Animated.View style={{ transform: [{ scale: likeAnim }] }}>
             <View style={styles.iconContainer}>
@@ -129,7 +167,7 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
           <Text style={styles.count}>{comments}</Text>
         </Pressable>
 
-        {/* Bookmark Button */}
+        {/* Bookmark Button with satisfying animation */}
         <Pressable style={styles.item} onPress={handleSave}>
           <Animated.View style={{ transform: [{ scale: saveAnim }] }}>
             <View style={styles.iconContainer}>
@@ -150,7 +188,21 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
         </Pressable>
       </View>
 
-      {/* Comment Modal */}
+      {/* Big Heart Pop Animation (like TikTok double-tap) */}
+      <Animated.View 
+        style={[
+          styles.heartPop,
+          {
+            opacity: heartPopOpacity,
+            transform: [{ scale: heartPopAnim }],
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <HeartIcon filled={true} size={120} />
+      </Animated.View>
+
+      {/* TikTok-Style Comment Modal - Slides up from bottom */}
       <Modal
         visible={commentModalVisible}
         animationType="slide"
@@ -161,10 +213,13 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
+          {/* Pressable overlay to close */}
           <Pressable 
             style={styles.modalOverlay} 
             onPress={() => setCommentModalVisible(false)}
           />
+          
+          {/* Comment Section */}
           <View style={styles.commentModal}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{comments} Comments</Text>
@@ -173,6 +228,7 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
               <Text style={styles.noComments}>No comments yet. Be the first!</Text>
             </ScrollView>
 
+            {/* Fixed Comment Input at Bottom */}
             <View style={styles.commentInputContainer}>
               <TextInput
                 style={styles.commentInput}
@@ -215,14 +271,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     bottom: 120,
+    zIndex: 10, // Ensure buttons are clickable
   },
   item: {
     alignItems: 'center',
     marginBottom: 20,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -233,7 +290,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
+  },
+  heartPop: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -60,
+    marginTop: -60,
+    zIndex: 100,
   },
   modalContainer: {
     flex: 1,
@@ -241,7 +306,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   commentModal: {
     backgroundColor: '#1a1a1a',
@@ -249,7 +314,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    maxHeight: '80%',
+    height: SCREEN_HEIGHT * 0.7, // 70% of screen
   },
   modalHandle: {
     width: 40,
@@ -273,19 +338,23 @@ const styles = StyleSheet.create({
   },
   commentsListContent: {
     paddingVertical: 20,
+    flexGrow: 1,
   },
   noComments: {
     color: '#888',
     fontSize: 14,
     textAlign: 'center',
+    marginTop: 40,
   },
   commentInputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 8,
     borderTopWidth: 1,
     borderTopColor: '#333',
+    backgroundColor: '#1a1a1a',
   },
   commentInput: {
     flex: 1,
