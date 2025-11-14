@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView, Dimensions, Platform } from 'react-native';
 import { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon } from '../common/icons';
 import ShareSheet from './ShareSheet';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function Engagement({ likes, comments, shares, isLiked, onLike, videoUrl }) {
+export default function Engagement({ likes, comments, shares, isLiked, onLike, videoUrl, isPlaying }) {
   const [likeAnim] = useState(new Animated.Value(1));
   const [shareAnim] = useState(new Animated.Value(1));
   const [saveAnim] = useState(new Animated.Value(1));
@@ -14,6 +14,33 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [commentText, setCommentText] = useState('');
+
+  // Heart pop animation that appears on double-tap
+  const [heartPopAnim] = useState(new Animated.Value(0));
+  const [heartPopOpacity] = useState(new Animated.Value(0));
+
+  // Audio disc rotation animation
+  const [discRotation] = useState(new Animated.Value(0));
+
+  // Rotate disc continuously when video is playing
+  useEffect(() => {
+    if (isPlaying) {
+      Animated.loop(
+        Animated.timing(discRotation, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      discRotation.stopAnimation();
+    }
+  }, [isPlaying]);
+
+  const spin = discRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   // Heart pop animation that appears on double-tap
   const [heartPopAnim] = useState(new Animated.Value(0));
@@ -181,6 +208,15 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
             </View>
           </Animated.View>
           <Text style={styles.count}>{shares}</Text>
+        </Pressable>
+
+        {/* Audio Disc Button - TikTok Style */}
+        <Pressable style={styles.item}>
+          <Animated.View style={[styles.audioDisc, { transform: [{ rotate: spin }] }]}>
+            <View style={styles.audioDiscInner}>
+              <Text style={styles.audioNote}>♪</Text>
+            </View>
+          </Animated.View>
         </Pressable>
       </View>
 
@@ -384,5 +420,28 @@ const styles = StyleSheet.create({
   },
   postButtonTextDisabled: {
     color: '#666',
+  },
+  audioDisc: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  audioDiscInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  audioNote: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
