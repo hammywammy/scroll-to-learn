@@ -7,6 +7,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Feed() {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   
   // Use ref to track which index is actually playing to avoid state-based re-renders
   const currentIndexRef = useRef(0);
@@ -31,7 +32,9 @@ export default function Feed() {
     return (
       <VideoPlayer 
         video={item} 
-        isActive={index === currentIndex} 
+        isActive={index === currentIndex}
+        onScrubStart={() => setScrollEnabled(false)}
+        onScrubEnd={() => setScrollEnabled(true)}
       />
     );
   }, [currentIndex]);
@@ -50,6 +53,7 @@ export default function Feed() {
       decelerationRate="fast"
       viewabilityConfig={viewabilityConfig}
       onViewableItemsChanged={onViewableItemsChanged}
+      scrollEnabled={scrollEnabled}
       // Performance optimizations
       removeClippedSubviews={true}
       maxToRenderPerBatch={2}
