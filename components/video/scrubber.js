@@ -1,11 +1,63 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated, Image, Platform } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated, Image } from 'react-native';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Cache thumbnails to avoid regenerating
+// Global cache - persists across component remounts
 const thumbnailCache = new Map();
+const generationQueue = new Map();
+
+// Pre-generate thumbnails in background
+const preGenerateThumbnails = async (videoUrl, durationMs) => {
+  if (!videoUrl || !durationMs || durationMs <= 0) return;
+  
+  // Generate every 3 seconds for smooth scrubbing
+  const interval = 3000;
+  const positions = [];
+  
+  for (let time = 0; time < durationMs; time += interval) {
+    positions.push(time);
+  }
+  
+  // Add end position
+  if (positions[positions.length - 1] !== durationMs) {
+    positions.push(durationMs - 1000); // 1 second before end
+  }
+  
+  // Generate in parallel batches of 3 to avoid overwhelming the system
+  for (let i = 0; i < positions.length; i += 3) {
+    const batch = positions.slice(i, i + 3);
+    
+    await Promise.all(
+      batch.map(async (time) => {
+        const timeKey = Math.floor(time / 1000);
+        const cacheKey = `${videoUrl}_${timeKey}`;
+        
+        // Skip if already cached or being generated
+        if (thumbnailCache.has(cacheKey) || generationQueue.has(cacheKey)) {
+          return;
+        }
+        
+        generationQueue.set(cacheKey, true);
+        
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
+            time,
+            quality: 0.85, // Slightly higher quality
+          });
+          
+          thumbnailCache.set(cacheKey, uri);
+        } catch (error) {
+          // Silently fail for background generation
+          console.log(`Pre-gen failed for ${timeKey}s`);
+        } finally {
+          generationQueue.delete(cacheKey);
+        }
+      })
+    );
+  }
+};
 
 export default function VideoScrubber({ 
   videoRef, 
@@ -22,21 +74,81 @@ export default function VideoScrubber({
   const [previewPosition, setPreviewPosition] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [thumbnailUri, setThumbnailUri] = useState(null);
-  const [isLoadingThumbnail, setIsLoadingThumbnail] = useState(false);
   
   const progressBarRef = useRef(null);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [progressBarX, setProgressBarX] = useState(0);
   const thumbnailTimeout = useRef(null);
-  const lastGeneratedTime = useRef(-1);
+  const lastRequestedTime = useRef(-1);
+  const preGenerationStarted = useRef(false);
 
-  // Preview animation
+  // Animations
   const [previewScale] = useState(new Animated.Value(0));
   const [previewOpacity] = useState(new Animated.Value(0));
+  const [thumbScale] = useState(new Animated.Value(1));
 
-  // Generate thumbnail at scrub position (optimized)
+  // Start pre-generation when video becomes active
   useEffect(() => {
-    if (!isScrubbing || !videoUrl || scrubPosition <= 0 || duration <= 0) {
+    if (isActive && videoUrl && duration > 0 && !preGenerationStarted.current) {
+      preGenerationStarted.current = true;
+      
+      // Start pre-generation after a short delay to not interfere with video loading
+      setTimeout(() => {
+        preGenerateThumbnails(videoUrl, duration);
+      }, 1000);
+    }
+    
+    if (!isActive) {
+      preGenerationStarted.current = false;
+    }
+  }, [isActive, videoUrl, duration]);
+
+  // Get thumbnail for current scrub position
+  const loadThumbnail = useCallback(async (scrubPos) => {
+    if (!videoUrl || scrubPos <= 0) return;
+
+    const timeInSeconds = Math.floor(scrubPos / 1000);
+    
+    // Don't re-request same second
+    if (timeInSeconds === lastRequestedTime.current) {
+      return;
+    }
+    
+    lastRequestedTime.current = timeInSeconds;
+    const cacheKey = `${videoUrl}_${timeInSeconds}`;
+    
+    // Check cache first - instant display
+    if (thumbnailCache.has(cacheKey)) {
+      setThumbnailUri(thumbnailCache.get(cacheKey));
+      return;
+    }
+
+    // If already being generated, wait
+    if (generationQueue.has(cacheKey)) {
+      return;
+    }
+
+    // Generate on-demand
+    generationQueue.set(cacheKey, true);
+    
+    try {
+      const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
+        time: scrubPos,
+        quality: 0.85,
+      });
+      
+      thumbnailCache.set(cacheKey, uri);
+      setThumbnailUri(uri);
+    } catch (error) {
+      console.log('Thumbnail generation error:', error);
+    } finally {
+      generationQueue.delete(cacheKey);
+    }
+  }, [videoUrl]);
+
+  // Update thumbnail when scrub position changes
+  useEffect(() => {
+    if (!isScrubbing || scrubPosition <= 0) {
       return;
     }
 
@@ -45,94 +157,80 @@ export default function VideoScrubber({
       clearTimeout(thumbnailTimeout.current);
     }
 
-    // Debounce - only generate after 100ms of no movement
-    thumbnailTimeout.current = setTimeout(async () => {
-      // Round to nearest second for caching
-      const timeInSeconds = Math.floor(scrubPosition / 1000);
-      
-      // Don't regenerate if we just generated this second
-      if (timeInSeconds === lastGeneratedTime.current) {
-        return;
-      }
+    // Immediate check for cached thumbnails
+    const timeInSeconds = Math.floor(scrubPosition / 1000);
+    const cacheKey = `${videoUrl}_${timeInSeconds}`;
+    
+    if (thumbnailCache.has(cacheKey)) {
+      setThumbnailUri(thumbnailCache.get(cacheKey));
+      lastRequestedTime.current = timeInSeconds;
+      return;
+    }
 
-      const cacheKey = `${videoUrl}_${timeInSeconds}`;
-      
-      // Check cache first
-      if (thumbnailCache.has(cacheKey)) {
-        setThumbnailUri(thumbnailCache.get(cacheKey));
-        lastGeneratedTime.current = timeInSeconds;
-        return;
-      }
-
-      setIsLoadingThumbnail(true);
-
-      try {
-        const { uri } = await VideoThumbnails.getThumbnailAsync(
-          videoUrl,
-          {
-            time: scrubPosition,
-            quality: 0.75, // TikTok-like quality
-          }
-        );
-        
-        // Cache the thumbnail
-        thumbnailCache.set(cacheKey, uri);
-        setThumbnailUri(uri);
-        lastGeneratedTime.current = timeInSeconds;
-      } catch (error) {
-        console.log('Thumbnail generation error:', error);
-      } finally {
-        setIsLoadingThumbnail(false);
-      }
-    }, 100); // 100ms debounce
+    // Debounce for non-cached
+    thumbnailTimeout.current = setTimeout(() => {
+      loadThumbnail(scrubPosition);
+    }, 80); // Short debounce for responsive feel
 
     return () => {
       if (thumbnailTimeout.current) {
         clearTimeout(thumbnailTimeout.current);
       }
     };
-  }, [scrubPosition, isScrubbing, videoUrl, duration]);
+  }, [scrubPosition, isScrubbing, videoUrl, loadThumbnail]);
 
-  // Show preview with animation
+  // Show preview with smooth animation
   const showPreviewWithAnimation = () => {
     setShowPreview(true);
+    
     Animated.parallel([
       Animated.spring(previewScale, {
         toValue: 1,
         friction: 8,
-        tension: 40,
+        tension: 60,
         useNativeDriver: true,
       }),
       Animated.timing(previewOpacity, {
         toValue: 1,
-        duration: 150,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(thumbScale, {
+        toValue: 1.5,
+        friction: 6,
+        tension: 50,
         useNativeDriver: true,
       }),
     ]).start();
   };
 
-  // Hide preview with animation
+  // Hide preview with smooth animation
   const hidePreviewWithAnimation = () => {
     Animated.parallel([
       Animated.spring(previewScale, {
         toValue: 0.8,
         friction: 8,
-        tension: 40,
+        tension: 60,
         useNativeDriver: true,
       }),
       Animated.timing(previewOpacity, {
         toValue: 0,
-        duration: 150,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(thumbScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 50,
         useNativeDriver: true,
       }),
     ]).start(() => {
       setShowPreview(false);
-      setThumbnailUri(null);
-      lastGeneratedTime.current = -1;
+      lastRequestedTime.current = -1;
     });
   };
 
-  // Handle scrubbing start
+  // Handle scrub start
   const handleScrubStart = (event) => {
     if (!progressBarWidth || duration === 0) return;
 
@@ -145,13 +243,12 @@ export default function VideoScrubber({
     setIsScrubbing(true);
     showPreviewWithAnimation();
     
-    // Notify parent to pause video and prevent scrolling
     if (onScrubStart) {
       onScrubStart();
     }
   };
 
-  // Handle scrubbing move
+  // Handle scrub move
   const handleScrubMove = (event) => {
     if (!isScrubbing || duration === 0 || !progressBarWidth) return;
 
@@ -163,14 +260,13 @@ export default function VideoScrubber({
     setPreviewPosition(percentage);
   };
 
-  // Handle scrubbing end
+  // Handle scrub end
   const handleScrubEnd = async () => {
     if (!isScrubbing) return;
 
     hidePreviewWithAnimation();
     setIsScrubbing(false);
     
-    // Notify parent to seek to position and resume
     if (onSeek) {
       await onSeek(scrubPosition);
     }
@@ -180,17 +276,17 @@ export default function VideoScrubber({
     }
   };
 
-  // Measure progress bar layout
+  // Measure progress bar
   const onProgressBarLayout = (event) => {
     const { width } = event.nativeEvent.layout;
     setProgressBarWidth(width);
     
-    // Get absolute position
-    progressBarRef.current?.measureInWindow((x, y, width, height) => {
+    progressBarRef.current?.measureInWindow((x) => {
       setProgressBarX(x);
     });
   };
 
+  // Format time display
   const formatTime = (millis) => {
     const totalSeconds = Math.floor(millis / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -198,16 +294,17 @@ export default function VideoScrubber({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Calculate progress percentages
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const scrubPercentage = duration > 0 ? (scrubPosition / duration) * 100 : 0;
   const displayedPercentage = isScrubbing ? scrubPercentage : progressPercentage;
 
-  // Calculate preview position (centered above thumb, with screen edge protection)
+  // Calculate preview position with edge protection
   const previewWidth = 100;
   const previewLeft = Math.max(
-    10, // Min distance from left edge
+    10,
     Math.min(
-      SCREEN_WIDTH - previewWidth - 10, // Max distance from right edge
+      SCREEN_WIDTH - previewWidth - 10,
       (previewPosition * SCREEN_WIDTH) - (previewWidth / 2)
     )
   );
@@ -226,17 +323,20 @@ export default function VideoScrubber({
             },
           ]}
         >
-          {/* Thumbnail Preview Window */}
+          {/* Thumbnail Window */}
           <View style={styles.thumbnailWrapper}>
             {thumbnailUri ? (
               <Image
                 source={{ uri: thumbnailUri }}
                 style={styles.thumbnailImage}
                 resizeMode="cover"
+                fadeDuration={0}
               />
             ) : (
               <View style={styles.thumbnailLoading}>
-                <Text style={styles.loadingDots}>•••</Text>
+                <View style={styles.loadingPulse}>
+                  <Text style={styles.loadingText}>⚡</Text>
+                </View>
               </View>
             )}
           </View>
@@ -248,12 +348,12 @@ export default function VideoScrubber({
             </Text>
           </View>
 
-          {/* Triangle pointer */}
+          {/* Pointer Triangle */}
           <View style={styles.triangle} />
         </Animated.View>
       )}
 
-      {/* Progress Bar Container with Touch Handlers */}
+      {/* Progress Bar with Touch Handlers */}
       <View
         ref={progressBarRef}
         style={styles.progressBarContainer}
@@ -264,9 +364,9 @@ export default function VideoScrubber({
         onResponderMove={handleScrubMove}
         onResponderRelease={handleScrubEnd}
         onResponderTerminate={handleScrubEnd}
-        onResponderTerminationRequest={() => false} // CRITICAL: Don't allow parent to steal responder
+        onResponderTerminationRequest={() => false}
       >
-        {/* Background Bar */}
+        {/* Progress Bar Background */}
         <View style={styles.progressBar}>
           {/* Filled Progress */}
           <View 
@@ -277,15 +377,14 @@ export default function VideoScrubber({
           />
         </View>
         
-        {/* Progress Thumb/Dot */}
+        {/* Progress Thumb */}
         {displayedPercentage > 0 && (
-          <View 
+          <Animated.View 
             style={[
               styles.progressThumb, 
               { 
                 left: `${displayedPercentage}%`,
-                opacity: isScrubbing ? 1 : 0.8,
-                transform: [{ scale: isScrubbing ? 1.3 : 1 }],
+                transform: [{ scale: thumbScale }],
               }
             ]} 
           />
@@ -304,12 +403,11 @@ const styles = StyleSheet.create({
     zIndex: 3,
   },
   progressBarContainer: {
-    height: 30, // Larger touch target
+    height: 32,
     justifyContent: 'center',
-    paddingHorizontal: 0,
   },
   progressBar: {
-    height: 3, // Thin like TikTok
+    height: 3,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     width: '100%',
     borderRadius: 1.5,
@@ -321,37 +419,37 @@ const styles = StyleSheet.create({
   },
   progressThumb: {
     position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#fff',
-    marginLeft: -6, // Center on position
-    top: 9, // Center vertically in 30px container
+    marginLeft: -7,
+    top: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 8,
   },
   previewContainer: {
     position: 'absolute',
-    bottom: 45, // Above progress bar
+    bottom: 48,
     width: 100,
     alignItems: 'center',
   },
   thumbnailWrapper: {
     width: 100,
-    height: 177, // 16:9 vertical aspect ratio (100 * 1.77)
-    borderRadius: 12,
+    height: 177,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#000',
     borderWidth: 3,
     borderColor: '#fff',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 15,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.7,
+    shadowRadius: 15,
+    elevation: 25,
   },
   thumbnailImage: {
     width: '100%',
@@ -362,37 +460,42 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#0a0a0a',
   },
-  loadingDots: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: 'bold',
-    opacity: 0.5,
+  loadingPulse: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 40,
+    opacity: 0.7,
   },
   timeLabel: {
-    marginTop: 6,
+    marginTop: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   timeText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   triangle: {
     width: 0,
     height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderTopWidth: 8,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderTopWidth: 10,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: 'rgba(0, 0, 0, 0.95)',
