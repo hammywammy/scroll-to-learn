@@ -5,9 +5,15 @@ import { mockVideos } from '../../lib/constants';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// TikTok-style optimization constants
-const PRELOAD_RANGE = 2; // Preload 2 videos ahead and behind
-const RENDER_AHEAD = 1;  // How many items ahead to render
+/**
+ * TikTok-LEVEL FEED OPTIMIZATION
+ * Based on production TikTok clones and performance research:
+ * - windowSize=3 (TikTok standard: current + 1 above + 1 below)
+ * - maxToRenderPerBatch=1 (render one video at a time)
+ * - Preload only immediate neighbors (not 2+ away)
+ * - getItemLayout for instant layout calculations
+ * - removeClippedSubviews for memory management
+ */
 
 export default function Feed() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -23,10 +29,10 @@ export default function Feed() {
   // Get current videos based on tab
   const currentVideos = activeTab === 'foryou' ? mockVideos : followingVideos;
 
-  // Memoize the data to prevent unnecessary re-renders
+  // Memoize data - prevents re-renders
   const memoizedData = useMemo(() => currentVideos, [currentVideos]);
 
-  // Viewability configuration - CRITICAL for performance
+  // TikTok uses 50% threshold
   const viewabilityConfig = useRef({
     viewAreaCoveragePercentThreshold: 50,
     minimumViewTime: 0,
@@ -41,14 +47,13 @@ export default function Feed() {
     }
   }).current;
 
-  // Determine which videos should be loaded based on current index
-  // TikTok loads: current, next 2, previous 2
+  // TikTok loads: current + 1 ahead + 1 behind (windowSize=3)
   const shouldLoadVideo = useCallback((itemIndex) => {
     const distance = Math.abs(itemIndex - currentIndex);
-    return distance <= PRELOAD_RANGE;
+    return distance <= 1; // Only load immediate neighbors
   }, [currentIndex]);
 
-  // Memoized render function - CRITICAL for performance
+  // Memoized render - CRITICAL: no inline functions
   const renderItem = useCallback(({ item, index }) => {
     const isActive = index === currentIndex;
     const shouldLoad = shouldLoadVideo(index);
@@ -64,10 +69,10 @@ export default function Feed() {
     );
   }, [currentIndex, shouldLoadVideo]);
 
-  // Key extractor - must be stable
+  // Stable key extractor
   const keyExtractor = useCallback((item) => item.id, []);
 
-  // Get item layout - CRITICAL for performance
+  // Pre-calculated layout - MASSIVE performance gain
   const getItemLayout = useCallback((data, index) => ({
     length: SCREEN_HEIGHT,
     offset: SCREEN_HEIGHT * index,
@@ -105,7 +110,7 @@ export default function Feed() {
         </Pressable>
       </View>
 
-      {/* Optimized Video Feed */}
+      {/* OPTIMIZED Video Feed - TikTok Level */}
       <FlatList
         ref={flatListRef}
         data={memoizedData}
@@ -119,7 +124,7 @@ export default function Feed() {
         snapToAlignment="start"
         decelerationRate="fast"
         
-        // Visibility
+        // Visibility tracking
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         
@@ -127,19 +132,19 @@ export default function Feed() {
         scrollEnabled={scrollEnabled}
         showsVerticalScrollIndicator={false}
         
-        // CRITICAL OPTIMIZATIONS - TikTok Level
-        removeClippedSubviews={true}        // Unmount off-screen views
-        maxToRenderPerBatch={3}              // Render 3 at a time
-        windowSize={5}                       // Keep 5 screens in memory (2 above, current, 2 below)
-        initialNumToRender={2}               // Only render 2 initially
-        updateCellsBatchingPeriod={100}      // Batch updates every 100ms
+        // TIKTOK-LEVEL OPTIMIZATIONS
+        removeClippedSubviews={true}      // Unmount off-screen = huge memory save
+        maxToRenderPerBatch={1}           // Render 1 at a time (TikTok standard)
+        windowSize={3}                    // Keep 3 screens (1 above, current, 1 below)
+        initialNumToRender={1}            // Only render first video
+        updateCellsBatchingPeriod={50}    // Faster updates (was 100ms)
         
-        // Memory optimizations
-        disableIntervalMomentum={true}       // Better snap behavior
+        // Memory & scroll optimizations
+        disableIntervalMomentum={true}
         disableScrollViewPanResponder={false}
         
-        // Prevent unnecessary re-renders
-        extraData={currentIndex}             // Only re-render when index changes
+        // Re-render control
+        extraData={currentIndex}
       />
     </View>
   );
