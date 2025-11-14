@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Share, Platform, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView, Dimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Animated, Modal, TextInput, KeyboardAvoidingView, ScrollView, Dimensions, Platform } from 'react-native';
 import { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon } from '../common/icons';
+import ShareSheet from './ShareSheet';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -10,6 +11,7 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
   const [saveAnim] = useState(new Animated.Value(1));
   const [commentAnim] = useState(new Animated.Value(1));
   const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [commentText, setCommentText] = useState('');
 
@@ -34,14 +36,8 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
       }),
     ]).start();
 
-    try {
-      await Share.share({
-        message: `Check out this video!${Platform.OS === 'ios' ? '' : ` ${videoUrl}`}`,
-        url: Platform.OS === 'ios' ? videoUrl : undefined,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    // Show share modal
+    setShareModalVisible(true);
   };
 
   const handleLike = () => {
@@ -252,6 +248,13 @@ export default function Engagement({ likes, comments, shares, isLiked, onLike, v
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Share Modal */}
+      <ShareSheet
+        visible={shareModalVisible}
+        onClose={() => setShareModalVisible(false)}
+        videoUrl={videoUrl}
+      />
     </>
   );
 }
@@ -271,7 +274,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     bottom: 120,
-    zIndex: 10, // Ensure buttons are clickable
+    zIndex: 10,
   },
   item: {
     alignItems: 'center',
@@ -314,7 +317,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    height: SCREEN_HEIGHT * 0.7, // 70% of screen
+    height: SCREEN_HEIGHT * 0.7,
   },
   modalHandle: {
     width: 40,
