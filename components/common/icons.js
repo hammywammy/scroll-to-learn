@@ -1,46 +1,99 @@
 import React from 'react';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { G, Path } from 'react-native-svg';
 
-// Heart Icon - rivet-icons:heart-solid
-export const HeartIcon = ({ filled, size = 32 }) => (
-  <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-    <Path
-      d="M8 14.25s-5.5-3.5-5.5-7.5a3.5 3.5 0 0 1 7-0 3.5 3.5 0 0 1 7 0c0 4-5.5 7.5-5.5 7.5z"
-      fill={filled ? '#FE2C55' : '#fff'}
-    />
-  </Svg>
-);
+/**
+ * ======================================
+ * HEART ICON - with filled/outline states
+ * ======================================
+ * Normal: White outline
+ * Toggled/Filled: Red (#FE2C55) solid
+ */
+export const HeartIcon = ({ filled, size = 32, color }) => {
+  const fillColor = filled ? (color || '#FE2C55') : (color || '#fff');
+  
+  return (
+    <Svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+    >
+      <Path
+        fill={fillColor}
+        d="m12 21.35l-1.45-1.32C5.4 15.36 2 12.27 2 8.5C2 5.41 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.08C13.09 3.81 14.76 3 16.5 3C19.58 3 22 5.41 22 8.5c0 3.77-3.4 6.86-8.55 11.53z"
+      />
+    </Svg>
+  );
+};
 
-// Comment Icon - iconamoon:comment-dots-fill  
-export const CommentIcon = ({ size = 32 }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12c0 1.592.376 3.097 1.043 4.432L2 22l5.568-1.043A9.954 9.954 0 0 0 12 22z"
-      fill="#fff"
-    />
-    <Path
-      d="M8.5 12.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3.5 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3.5 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"
-      fill="#000"
-    />
-  </Svg>
-);
+/**
+ * ======================================
+ * COMMENT ICON
+ * ======================================
+ * Chat bubble with three dots
+ */
+export const CommentIcon = ({ size = 32, color = '#fff' }) => {
+  return (
+    <Svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+    >
+      <Path
+        fill={color}
+        d="M256 448c141.4 0 256-93.1 256-208S397.4 32 256 32S0 125.1 0 240c0 45.1 17.7 86.8 47.7 120.9c-1.9 24.5-11.4 46.3-21.4 62.9c-5.5 9.2-11.1 16.6-15.2 21.6c-2.1 2.5-3.7 4.4-4.9 5.7c-.6.6-1 1.1-1.3 1.4l-.3.3c-4.6 4.6-5.9 11.4-3.4 17.4s8.3 9.9 14.8 9.9c28.7 0 57.6-8.9 81.6-19.3c22.9-10 42.4-21.9 54.3-30.6c31.8 11.5 67 17.9 104.1 17.9zM128 208a32 32 0 1 1 0 64a32 32 0 1 1 0-64m128 0a32 32 0 1 1 0 64a32 32 0 1 1 0-64m96 32a32 32 0 1 1 64 0a32 32 0 1 1-64 0"
+      />
+    </Svg>
+  );
+};
 
-// Bookmark Icon - material-symbols:bookmark
-export const BookmarkIcon = ({ saved, size = 32 }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"
-      fill={saved ? '#FFD700' : '#fff'}
-    />
-  </Svg>
-);
+/**
+ * ======================================
+ * BOOKMARK ICON - with saved/unsaved states
+ * ======================================
+ * Normal: White
+ * Saved/Toggled: Yellow/Gold (#FFD700)
+ */
+export const BookmarkIcon = ({ saved, size = 32, color }) => {
+  const fillColor = saved ? (color || '#FFD700') : (color || '#fff');
+  
+  return (
+    <Svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+    >
+      <Path
+        fill={fillColor}
+        d="M5 21V5q0-.825.588-1.412T7 3h10q.825 0 1.413.588T19 5v16l-7-3z"
+      />
+    </Svg>
+  );
+};
 
-// Share Icon - mingcute:share-forward-fill
-export const ShareIcon = ({ size = 32 }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M13.576 17.271c-1.096.46-2.165 1.238-2.913 2.07l-.718.797V3.862l.718.797c.748.832 1.817 1.61 2.913 2.07C15.794 7.713 19.093 8 22 8v8c-2.907 0-6.206.287-8.424 1.271z"
-      fill="#fff"
-    />
-  </Svg>
-);
+/**
+ * ======================================
+ * SHARE ICON
+ * ======================================
+ * Forward arrow/share icon
+ */
+export const ShareIcon = ({ size = 32, color = '#fff' }) => {
+  return (
+    <Svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+    >
+      <G fill="none">
+        <Path d="m12.593 23.258l-.011.002l-.071.035l-.02.004l-.014-.004l-.071-.035q-.016-.005-.024.005l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.017-.018m.265-.113l-.013.002l-.185.093l-.01.01l-.003.011l.018.43l.005.012l.008.007l.201.093q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.004-.011l.017-.43l-.003-.012l-.01-.01z" />
+        <Path
+          fill={color}
+          d="m10.114 4.491l-.203 3.144l-.02.417l-.09.01C5.363 8.582 2 12.366 2 17q0 .686.102 1.357c.279 1.845.489 2.024 1.772.498a9 9 0 0 1 1.04-1.03a7.96 7.96 0 0 1 4.754-1.818l.226-.005l.061 1.229l.166 2.345c.08.804.926 1.353 1.704.914c.352-.198.695-.41 1.04-.62c1.787-1.118 3.46-2.403 5.09-3.738c.96-.8 1.8-1.558 2.516-2.248c.33-.323.66-.646.979-.98c.462-.484.508-1.285.024-1.792c-1.114-1.165-2.688-2.624-4.647-4.172c-1.588-1.242-3.23-2.402-4.97-3.421c-.837-.477-1.667.177-1.743.972"
+        />
+      </G>
+    </Svg>
+  );
+};
