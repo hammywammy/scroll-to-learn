@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Dimensions, StyleSheet, Pressable, Animated, PanResponder } from 'react-native';
+import { View, Text, Dimensions, StyleSheet, Pressable, Animated } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import Engagement from './engagement';
 
@@ -16,25 +16,28 @@ export default function VideoPlayer({ video, isActive }) {
   const [scrubPosition, setScrubPosition] = useState(0);
   const [isVideoReady, setIsVideoReady] = useState(false);
   
+  // Progress bar interaction state
+  const progressBarRef = useRef(null);
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [progressBarX, setProgressBarX] = useState(0);
+  
   // Double tap detection
   const lastTap = useRef(null);
   const [likeAnimScale] = useState(new Animated.Value(0));
   const [likeAnimOpacity] = useState(new Animated.Value(0));
 
-  // Handle video playback based on isActive prop - CRITICAL for TikTok behavior
+  // Handle video playback based on isActive prop
   useEffect(() => {
     const handlePlayback = async () => {
       if (!videoRef.current) return;
 
       try {
         if (isActive) {
-          // Only play if video is ready
-          if (isVideoReady) {
+          if (isVideoReady && !isScrubbing) {
             await videoRef.current.playAsync();
             setIsPlaying(true);
           }
         } else {
-          // Pause and reset non-active videos
           await videoRef.current.pauseAsync();
           await videoRef.current.setPositionAsync(0);
           setIsPlaying(false);
@@ -46,62 +49,85 @@ export default function VideoPlayer({ video, isActive }) {
     };
     
     handlePlayback();
-  }, [isActive, isVideoReady]);
+  }, [isActive, isVideoReady, isScrubbing]);
 
-  // Pan responder for progress bar scrubbing - FIXED version
-  const progressPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: async (evt) => {
-        if (!isVideoReady || duration === 0) return;
+  // Handle progress bar tap - CRITICAL: Simple tap-to-seek
+  const handleProgressBarPress = async (event) => {
+    if (!isVideoReady || duration === 0 || !progressBarWidth) return;
+
+    const touchX = event.nativeEvent.locationX;
+    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
+    const newPosition = percentage * duration;
+
+    try {
+      if (videoRef.current) {
+        await videoRef.current.pauseAsync();
+        await videoRef.current.setPositionAsync(newPosition);
+        setPosition(newPosition);
         
-        setIsScrubbing(true);
-        
-        // Calculate initial scrub position from tap location
-        const touchX = evt.nativeEvent.locationX;
-        const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
-        const newPosition = percentage * duration;
-        setScrubPosition(newPosition);
-        
-        try {
-          if (videoRef.current) {
-            await videoRef.current.pauseAsync();
-          }
-        } catch (error) {
-          console.log('Pause error:', error);
+        // Resume playing if active
+        if (isActive) {
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (!isVideoReady || duration === 0) return;
+      }
+    } catch (error) {
+      console.log('Seek error:', error);
+    }
+  };
+
+  // Handle scrubbing start
+  const handleScrubStart = async (event) => {
+    if (!isVideoReady || duration === 0 || !progressBarWidth) return;
+
+    setIsScrubbing(true);
+    
+    const touchX = event.nativeEvent.locationX;
+    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
+    const newPosition = percentage * duration;
+    setScrubPosition(newPosition);
+
+    try {
+      if (videoRef.current) {
+        await videoRef.current.pauseAsync();
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.log('Scrub start error:', error);
+    }
+  };
+
+  // Handle scrubbing move
+  const handleScrubMove = (event) => {
+    if (!isScrubbing || duration === 0 || !progressBarWidth) return;
+
+    const touchX = event.nativeEvent.pageX - progressBarX;
+    const percentage = Math.max(0, Math.min(1, touchX / progressBarWidth));
+    const newPosition = percentage * duration;
+    setScrubPosition(newPosition);
+  };
+
+  // Handle scrubbing end
+  const handleScrubEnd = async () => {
+    if (!isScrubbing || !isVideoReady) return;
+
+    try {
+      if (videoRef.current) {
+        await videoRef.current.setPositionAsync(scrubPosition);
+        setPosition(scrubPosition);
         
-        // Use the absolute X position on screen
-        const touchX = gestureState.moveX;
-        const percentage = Math.max(0, Math.min(1, touchX / SCREEN_WIDTH));
-        const newPosition = percentage * duration;
-        setScrubPosition(newPosition);
-      },
-      onPanResponderRelease: async () => {
-        if (!isVideoReady || !isScrubbing) return;
-        
-        try {
-          if (videoRef.current) {
-            // Seek to the scrubbed position
-            await videoRef.current.setPositionAsync(scrubPosition);
-            // Resume playing if video was active
-            if (isActive) {
-              await videoRef.current.playAsync();
-              setIsPlaying(true);
-            }
-          }
-        } catch (error) {
-          console.log('Scrub release error:', error);
-        } finally {
-          setIsScrubbing(false);
+        // Resume playing if video is active
+        if (isActive) {
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
-      },
-    })
-  ).current;
+      }
+    } catch (error) {
+      console.log('Scrub end error:', error);
+    } finally {
+      setIsScrubbing(false);
+    }
+  };
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -174,7 +200,6 @@ export default function VideoPlayer({ video, isActive }) {
 
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
-      // Mark video as ready when first loaded
       if (!isVideoReady) {
         setIsVideoReady(true);
       }
@@ -193,6 +218,17 @@ export default function VideoPlayer({ video, isActive }) {
     }
   };
 
+  // Measure progress bar layout
+  const onProgressBarLayout = (event) => {
+    const { width, x } = event.nativeEvent.layout;
+    setProgressBarWidth(width);
+    
+    // Get absolute position
+    progressBarRef.current?.measureInWindow((x, y, width, height) => {
+      setProgressBarX(x);
+    });
+  };
+
   const formatTime = (millis) => {
     const totalSeconds = Math.floor(millis / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -202,6 +238,7 @@ export default function VideoPlayer({ video, isActive }) {
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const scrubPercentage = duration > 0 ? (scrubPosition / duration) * 100 : 0;
+  const displayedPercentage = isScrubbing ? scrubPercentage : progressPercentage;
 
   return (
     <View style={styles.container}>
@@ -213,12 +250,12 @@ export default function VideoPlayer({ video, isActive }) {
         resizeMode={ResizeMode.COVER}
         isLooping
         isMuted={isMuted}
-        shouldPlay={false} // Control via ref instead
+        shouldPlay={false}
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
         progressUpdateIntervalMillis={100}
       />
 
-      {/* Scrubbing Overlay - Dims video when scrubbing */}
+      {/* Scrubbing Overlay */}
       {isScrubbing && (
         <View style={styles.scrubbingOverlay} />
       )}
@@ -256,38 +293,60 @@ export default function VideoPlayer({ video, isActive }) {
 
       {/* Bottom Section - TikTok Style */}
       <View style={styles.bottomSection}>
-        {/* Profile and Video Info */}
         <View style={styles.infoSection}>
           <Text style={styles.username}>@{video.creator}</Text>
           <Text style={styles.description}>{video.description}</Text>
         </View>
       </View>
 
-      {/* Progress Bar - Full Width at Bottom */}
-      <View style={styles.progressSection} {...progressPanResponder.panHandlers}>
+      {/* TikTok-Style Progress Bar - FIXED VERSION */}
+      <View style={styles.progressSection}>
         {/* Time Display - Shows when scrubbing */}
         {isScrubbing && (
-          <View style={styles.timeDisplay}>
+          <View 
+            style={[
+              styles.timeDisplay,
+              { left: `${scrubPercentage}%` }
+            ]}
+          >
             <Text style={styles.timeText}>{formatTime(scrubPosition)}</Text>
           </View>
         )}
 
-        <View style={styles.progressBarContainer}>
+        {/* Progress Bar Container with Touch Handlers */}
+        <View
+          ref={progressBarRef}
+          style={styles.progressBarContainer}
+          onLayout={onProgressBarLayout}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={handleScrubStart}
+          onResponderMove={handleScrubMove}
+          onResponderRelease={handleScrubEnd}
+          onResponderTerminate={handleScrubEnd}
+        >
+          {/* Background Bar */}
           <View style={styles.progressBar}>
+            {/* Filled Progress */}
             <View 
               style={[
                 styles.progressFill, 
-                { width: `${isScrubbing ? scrubPercentage : progressPercentage}%` }
+                { width: `${displayedPercentage}%` }
               ]} 
             />
           </View>
-          {/* Progress Circle/Thumb */}
-          <View 
-            style={[
-              styles.progressThumb, 
-              { left: `${isScrubbing ? scrubPercentage : progressPercentage}%` }
-            ]} 
-          />
+          
+          {/* Progress Thumb/Dot - Only visible when scrubbing or hovering */}
+          {(isScrubbing || displayedPercentage > 0) && (
+            <View 
+              style={[
+                styles.progressThumb, 
+                { 
+                  left: `${displayedPercentage}%`,
+                  opacity: isScrubbing ? 1 : 0.8
+                }
+              ]} 
+            />
+          )}
         </View>
       </View>
       
@@ -392,12 +451,12 @@ const styles = StyleSheet.create({
   },
   timeDisplay: {
     position: 'absolute',
-    top: -30,
-    alignSelf: 'center',
+    top: -35,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 4,
+    marginLeft: -30, // Center above thumb
   },
   timeText: {
     color: '#fff',
@@ -405,18 +464,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   progressBarContainer: {
-    height: 20,
+    height: 30, // Larger touch target
     justifyContent: 'center',
     paddingHorizontal: 0,
   },
   progressBar: {
-    height: 3,
+    height: 3, // Thin like TikTok
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     width: '100%',
+    borderRadius: 1.5,
   },
   progressFill: {
     height: 3,
     backgroundColor: '#fff',
+    borderRadius: 1.5,
   },
   progressThumb: {
     position: 'absolute',
@@ -424,7 +485,12 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     backgroundColor: '#fff',
-    marginLeft: -6,
-    top: 4,
+    marginLeft: -6, // Center on position
+    top: 9, // Center vertically in 30px container
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
 });
