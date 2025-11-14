@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { View, FlatList, Dimensions, StyleSheet, Pressable, Text } from 'react-native';
-import VideoPlayer from '../../components/video/player-optimized';
+import VideoPlayer from '../../components/video/player';
 import { mockVideos } from '../../lib/constants';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
